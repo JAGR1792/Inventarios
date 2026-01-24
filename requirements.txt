@@ -1,13 +1,8 @@
 python-dotenv==1.0.1
 SQLAlchemy==2.0.46
 openpyxl==3.1.2
-PySide6==6.7.2
 # Optional (Windows): enables LOCAL_EXCEL_ENGINE=excel
 pywin32==306
 
-# Optional (Windows): alternativa a QtWebEngine usando Edge WebView2
-# Instalar solo si quieres correr con: python run_webview.py o INVENTARIOS_UI=webview
-# pywebview==5.*
-webview==0.1.5
-
+# Desktop UI (Windows): Edge WebView2 via pywebview
 pywebview==6.1

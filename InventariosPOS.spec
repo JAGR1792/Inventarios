@@ -4,11 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 datas = [('inventarios\\ui\\web', 'inventarios\\ui\\web'), ('assets', 'assets')]
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('PySide6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('PySide6.QtWebEngineCore')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('PySide6.QtWebEngineWidgets')
+tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
@@ -46,5 +42,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\jorge\\Documents\\GitHub\\Inventarios\\assets\\app.ico'],
+    icon=['assets\\app.ico'],
 )

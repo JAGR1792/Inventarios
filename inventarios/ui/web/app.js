@@ -1,4 +1,4 @@
-/* global QWebChannel */
+/* global */
 
 const state = {
   backend: null,
@@ -1003,14 +1003,6 @@ function setupHandlers() {
   })
 }
 
-function initWebChannel() {
-  new QWebChannel(qt.webChannelTransport, (channel) => {
-    state.backend = channel.objects.backend
-
-    initBackendCommon()
-  })
-}
-
 let _backendInited = false
 
 function setBridgeStatus(msg, isError) {
@@ -1106,13 +1098,6 @@ function initPyWebview() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  if (typeof qt !== 'undefined') {
-    // Qt WebEngine path
-    initWebChannel()
-    rerenderAll()
-    return
-  }
-
   // pywebview path: may not be ready yet at DOMContentLoaded
   if (window.pywebview && window.pywebview.api) {
     initPyWebview()
@@ -1120,7 +1105,7 @@ window.addEventListener('DOMContentLoaded', () => {
     return
   }
 
-  // Neither bridge is available yet. This is normal for pywebview: wait for 'pywebviewready'.
+  // Bridge not available yet. This is normal for pywebview: wait for 'pywebviewready'.
   setBridgeStatus('Cargando…', false)
 
   // As a fallback, poll briefly in case the event doesn't fire for some reason.
@@ -1135,7 +1120,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (tries >= 40) {
       clearInterval(t)
-      setBridgeStatus('Error: backend bridge no disponible (Qt WebChannel / pywebview)', true)
+      setBridgeStatus('Error: backend bridge no disponible (pywebview)', true)
     }
   }, 100)
 })

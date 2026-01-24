@@ -23,7 +23,7 @@ python -m pip install -r requirements-dev.txt
 $iconPath = Join-Path $repoRoot "assets\app.ico"
 $hasIcon = Test-Path $iconPath
 
-# Web UI assets must be bundled for QWebEngine local file load.
+# Web UI assets must be bundled for the embedded browser.
 $addDataWeb = "inventarios\ui\web;inventarios\ui\web"
 $addDataAssets = "assets;assets"
 
@@ -38,9 +38,7 @@ $cmd = @(
   "--name", $Name,
   "--add-data", $addDataWeb,
   "--add-data", $addDataAssets,
-  "--collect-all", "PySide6",
-  "--collect-all", "PySide6.QtWebEngineCore",
-  "--collect-all", "PySide6.QtWebEngineWidgets"
+  "--collect-all", "webview"
 ) + $modeArgs
 
 if ($hasIcon) {

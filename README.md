@@ -1,6 +1,6 @@
-# POS Desktop (PySide6) + SQLite
+# POS Desktop (pywebview/WebView2) + SQLite
 
-Este proyecto es un **POS de escritorio** (Point of Sale) hecho con **PySide6**.
+Este proyecto es un **POS de escritorio** (Point of Sale) hecho con **pywebview** (usa Edge WebView2 en Windows).
 
 La **fuente de verdad** ahora es una **base de datos real** (SQLite), para máxima velocidad y estabilidad.
 El Excel queda como **fuente de importación** (opcional) para cargar/actualizar catálogo.
@@ -13,7 +13,7 @@ El Excel queda como **fuente de importación** (opcional) para cargar/actualizar
 ## Arquitectura (bien separada)
 
 - `inventarios/`: core (settings, DB, modelos, repos, servicios, importador de Excel).
-- `inventarios/ui/`: UI PySide6 (pestañas Ventas/Resumen).
+- `inventarios/ui/`: host desktop (pywebview) + UI web (HTML/CSS/JS).
 - `main.py`: entrypoint desktop.
 
 ### Flujo de datos
@@ -69,8 +69,8 @@ Reiniciar base de datos (borra ventas/pruebas):
 Manual para el dueño/a (imágenes y operación):
 - [MANUAL_DUENA.md](MANUAL_DUENA.md)
 
-## UI (PySide6 + Qt WebEngine)
-La interfaz es HTML/CSS/JS corriendo dentro de Qt (más fácil de hacer “bonita” tipo tienda online).
+## UI (pywebview + WebView2)
+La interfaz es HTML/CSS/JS corriendo en Edge WebView2 embebido (rápido y con buena compatibilidad web).
 
 Vistas:
 - **Tienda**: grilla tipo catálogo.
