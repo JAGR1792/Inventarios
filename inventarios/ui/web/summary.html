@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inventarios POS - Resumen</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body data-page="summary">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">IP</div>
+          <div>
+            <div class="name" id="appName">Inventarios POS</div>
+            <div class="sub" id="appSub">Modo tienda + caja</div>
+          </div>
+        </div>
+
+        <nav class="tabs" role="tablist">
+          <a class="tab" id="tabStore" data-tab="store" role="tab" href="store.html">Tienda</a>
+          <a class="tab" id="tabCash" data-tab="cash" role="tab" href="cash.html">Caja</a>
+          <a class="tab active" id="tabSummary" data-tab="summary" role="tab" href="summary.html">Resumen del día</a>
+        </nav>
+
+        <div class="actions">
+          <button class="btn ghost" id="btnTheme" title="Cambiar tema (System / Dark / Light)">Tema</button>
+          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
+          <button class="btn" id="btnImport">Importar Excel</button>
+          <button class="btn danger" id="btnReset">Reiniciar DB</button>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="main">
+          <section class="panel" id="viewSummary">
+            <div class="summary2">
+              <div class="kpi">
+                <div class="kpiLabel">Total vendido (histórico)</div>
+                <div class="kpiValue" id="kpiTotal">$0,00</div>
+              </div>
+
+              <div class="card">
+                <div class="cardTitle">Últimas ventas</div>
+                <div class="tableWrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Método</th>
+                        <th class="right">Total</th>
+                        <th class="right">Items</th>
+                      </tr>
+                    </thead>
+                    <tbody id="salesRows"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="cardTitle">Cierres guardados</div>
+                <div class="tableWrap">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Creado</th>
+                        <th>Día</th>
+                        <th class="right">Efectivo inicio</th>
+                        <th class="right">Retiros</th>
+                        <th class="right">Efectivo esperado</th>
+                        <th class="right">Para mañana</th>
+                      </tr>
+                    </thead>
+                    <tbody id="closesRows"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="sidebar" id="cashier">
+          <div class="card sidebarCard">
+            <div class="cardTitle">Caja</div>
+            <div class="modalText mt0">
+              El cierre de caja y los retiros están en la pestaña <b>Caja</b>.
+            </div>
+            <div class="rowBtns mt10">
+              <a class="btn primary" href="cash.html#close">Abrir cierre de caja</a>
+              <a class="btn" href="cash.html">Ir a Caja</a>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <div class="toast" id="toast" hidden></div>
+
+      <div class="modal" id="modal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle">Reiniciar base de datos</div>
+          <div class="modalText">
+            Esto borra ventas y movimientos de caja, y pone el stock en 0.
+            <br />
+            <b>Las imágenes NO se borran</b> (ni archivos ni mapeos).
+            <br />
+            Escribe <b>BORRAR</b> para confirmar.
+          </div>
+          <input id="confirmText" class="modalInput" placeholder="BORRAR" />
+          <div class="modalActions">
+            <button class="btn" id="btnCancel">Cancelar</button>
+            <button class="btn danger" id="btnConfirm">Borrar todo</button>
+          </div>
+          <div class="error" id="modalError" hidden></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

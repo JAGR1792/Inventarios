@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inventarios POS - Caja</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body data-page="cash">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">IP</div>
+          <div>
+            <div class="name" id="appName">Inventarios POS</div>
+            <div class="sub" id="appSub">Modo tienda + caja</div>
+          </div>
+        </div>
+
+        <nav class="tabs" role="tablist">
+          <a class="tab" id="tabStore" data-tab="store" role="tab" href="store.html">Tienda</a>
+          <a class="tab active" id="tabCash" data-tab="cash" role="tab" href="cash.html">Caja</a>
+          <a class="tab" id="tabSummary" data-tab="summary" role="tab" href="summary.html">Resumen del día</a>
+        </nav>
+
+        <div class="actions">
+          <button class="btn ghost" id="btnTheme" title="Cambiar tema (System / Dark / Light)">Tema</button>
+          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
+          <button class="btn" id="btnImport">Importar Excel</button>
+          <button class="btn danger" id="btnReset">Reiniciar DB</button>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="main">
+          <section class="panel" id="viewCash">
+            <div class="toolbar">
+              <div class="toolbarRow">
+                <div class="search">
+                  <div class="hTitle">Caja</div>
+                  <div class="hint">Esta pestaña es solo para movimientos y cierre de caja (no tienda).</div>
+                </div>
+                <div class="filters">
+                  <div class="rowBtns">
+                    <a class="btn" href="store.html">Ir a Tienda</a>
+                    <a class="btn" href="summary.html">Ver Resumen</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cashWrap">
+              <div class="card">
+                <div class="cardTitle">Caja del día</div>
+
+                <div class="closeGrid">
+                  <label class="field">
+                    <span>Día (PC)</span>
+                    <input id="cashDay" type="date" disabled title="Se toma de la hora del computador" />
+                  </label>
+                  <label class="field">
+                    <span>Efectivo al iniciar (ajuste opcional)</span>
+                    <input id="openingCash" type="number" inputmode="decimal" placeholder="Sugerido" />
+                  </label>
+                  <div class="rowBtns span2">
+                    <button class="btn" id="btnSaveOpening" title="Solo si necesitas corregir el efectivo inicial">Guardar apertura</button>
+                    <button class="btn" id="btnUseSuggested" title="Volver al valor sugerido (de ayer)">Usar sugerido</button>
+                    <button class="btn" id="btnRefreshCash">Actualizar</button>
+                  </div>
+                </div>
+
+                <div class="hint" id="openingHint">—</div>
+
+                <div class="closeTotals">
+                  <div><span>Debería haber en caja (hoy)</span><b id="cashExpected">$0,00</b></div>
+                  <div><span>Inicio sugerido (ayer)</span><b id="cashOpeningSuggested">$0,00</b></div>
+                </div>
+              </div>
+
+              <div class="card mt12">
+                <div class="cardTitle">Retiros</div>
+                <div class="closeGrid">
+                  <label class="field">
+                    <span>Retiro (dinero que se sacó)</span>
+                    <input id="withdrawAmount" type="number" inputmode="decimal" placeholder="0" />
+                  </label>
+                  <label class="field">
+                    <span>Nota (opcional)</span>
+                    <input id="withdrawNotes" type="text" placeholder="Ej: compra proveedor" />
+                  </label>
+                  <div class="rowBtns span2">
+                    <button class="btn" id="btnAddWithdraw">Agregar retiro</button>
+                  </div>
+                </div>
+                <div class="miniList" id="withdrawList"></div>
+              </div>
+
+              <div class="card mt12">
+                <div class="cardTitle">Totales (hoy)</div>
+                <div class="closeTotals">
+                  <div><span>Total día</span><b id="cashGross">$0,00</b></div>
+                  <div><span>Efectivo (ventas)</span><b id="cashCash">$0,00</b></div>
+                  <div><span>Tarjeta</span><b id="cashCard">$0,00</b></div>
+                  <div><span>Nequi</span><b id="cashNequi">$0,00</b></div>
+                  <div><span>Virtual</span><b id="cashVirtual">$0,00</b></div>
+                  <div><span># Ventas</span><b id="cashCount">0</b></div>
+                  <div><span>Retiros</span><b id="cashWithdrawals">$0,00</b></div>
+                  <div><span>Último cierre</span><b id="cashLastClose">—</b></div>
+                </div>
+                <div class="rowBtns mt12">
+                  <button class="btn primary" id="btnOpenCloseModal">Cierre de caja</button>
+                </div>
+
+                <div class="error" id="cashError" hidden></div>
+                <div class="hint" id="cashOk" hidden></div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+
+      <div class="toast" id="toast" hidden></div>
+
+      <div class="modal" id="cashCloseModal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle">Cierre de caja</div>
+          <div class="modalText">Esto se hace al final del día.</div>
+
+          <div class="closeGrid">
+            <label class="field">
+              <span>Efectivo contado (opcional)</span>
+              <input id="cashCounted" type="number" inputmode="decimal" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Dejar para mañana</span>
+              <input id="carryNext" type="number" inputmode="decimal" placeholder="0" />
+            </label>
+            <label class="field span2">
+              <span>Notas (opcional)</span>
+              <input id="cashNotes" type="text" placeholder="Ej: turno mañana" />
+            </label>
+          </div>
+
+          <div class="modalActions">
+            <button class="btn" id="btnCloseModalCancel">Cancelar (Esc)</button>
+            <button class="btn primary" id="btnCloseDay">Guardar cierre</button>
+          </div>
+
+          <div class="error" id="cashCloseError" hidden></div>
+          <div class="hint" id="cashCloseOk" hidden></div>
+        </div>
+      </div>
+
+      <div class="modal" id="modal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle">Reiniciar base de datos</div>
+          <div class="modalText">
+            Esto borra ventas y movimientos de caja, y pone el stock en 0.
+            <br />
+            <b>Las imágenes NO se borran</b> (ni archivos ni mapeos).
+            <br />
+            Escribe <b>BORRAR</b> para confirmar.
+          </div>
+          <input id="confirmText" class="modalInput" placeholder="BORRAR" />
+          <div class="modalActions">
+            <button class="btn" id="btnCancel">Cancelar</button>
+            <button class="btn danger" id="btnConfirm">Borrar todo</button>
+          </div>
+          <div class="error" id="modalError" hidden></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

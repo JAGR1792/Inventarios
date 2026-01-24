@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inventarios POS - Tienda</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body data-page="store">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">IP</div>
+          <div>
+            <div class="name" id="appName">Inventarios POS</div>
+            <div class="sub" id="appSub">Modo tienda + caja</div>
+          </div>
+        </div>
+
+        <nav class="tabs" role="tablist">
+          <a class="tab active" id="tabStore" data-tab="store" role="tab" href="store.html">Tienda</a>
+          <a class="tab" id="tabCash" data-tab="cash" role="tab" href="cash.html">Caja</a>
+          <a class="tab" id="tabSummary" data-tab="summary" role="tab" href="summary.html">Resumen del día</a>
+        </nav>
+
+        <div class="actions">
+          <button class="btn ghost" id="btnTheme" title="Cambiar tema (System / Dark / Light)">Tema</button>
+          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
+          <button class="btn" id="btnImport">Importar Excel</button>
+          <button class="btn danger" id="btnReset">Reiniciar DB</button>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="main">
+          <section class="panel" id="viewStore">
+            <div class="toolbar">
+              <div class="toolbarRow">
+                <div class="search">
+                  <input id="storeSearch" type="text" placeholder="Buscar producto (F2)" autocomplete="off" />
+                  <div class="hint">Enter agrega el primero • F4 cobrar</div>
+                </div>
+                <div class="filters">
+                  <label class="field">
+                    <span>Categoría</span>
+                    <select id="storeCategory"></select>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="grid" id="storeGrid"></div>
+          </section>
+        </section>
+
+        <aside class="sidebar" id="cashier">
+          <div class="card sidebarCard">
+            <div class="cartHeader">
+              <div class="cartTitle">Ticket</div>
+              <button class="btn ghost" id="btnClear">Vaciar</button>
+            </div>
+            <div class="cartItems" id="cartItems"></div>
+            <div class="cartFooter">
+              <div class="totalRow">
+                <div>Total</div>
+                <div class="total" id="cartTotal">$0,00</div>
+              </div>
+              <button class="btn primary" id="btnCheckout">Cobrar (F4)</button>
+              <div class="error" id="errorBox" hidden></div>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <div class="toast" id="toast" hidden></div>
+
+      <div class="modal" id="productModal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle" id="pmTitle">Producto</div>
+          <div class="productModalBody">
+            <div class="pmThumb" id="pmThumb">📦</div>
+            <div class="flex1">
+              <div class="modalText" id="pmDesc"></div>
+              <div class="pmMeta">
+                <div>Stock: <span class="stock" id="pmStock">0</span></div>
+                <div class="pmPrice" id="pmPrice">$0,00</div>
+              </div>
+
+              <label class="field mt10">
+                <span>Categoría</span>
+                <input id="pmCategory" type="text" placeholder="Ej: Bebidas" />
+              </label>
+
+              <div class="pmQty">
+                <button class="btn" id="pmDec">-</button>
+                <input id="pmQty" type="number" value="1" min="1" />
+                <button class="btn" id="pmInc">+</button>
+              </div>
+            </div>
+          </div>
+          <div class="modalActions">
+            <button class="btn" id="pmCancel">Cerrar (Esc)</button>
+            <button class="btn" id="pmSaveCat">Guardar categoría</button>
+            <button class="btn" id="pmPickImg">Cambiar imagen</button>
+            <button class="btn ghost" id="pmClearImg">Quitar imagen</button>
+            <button class="btn primary" id="pmAdd">Agregar</button>
+          </div>
+          <div class="error" id="pmError" hidden></div>
+        </div>
+      </div>
+
+      <div class="modal" id="payModal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle">Cobrar</div>
+          <div class="modalText">Selecciona método de pago y confirma.</div>
+          <div class="payGrid">
+            <div class="payRow">
+              <label class="radio">
+                <input type="radio" name="payMethod" value="cash" checked />
+                <span>Efectivo</span>
+              </label>
+              <label class="radio">
+                <input type="radio" name="payMethod" value="card" />
+                <span>Tarjeta</span>
+              </label>
+              <label class="radio">
+                <input type="radio" name="payMethod" value="nequi" />
+                <span>Nequi</span>
+              </label>
+              <label class="radio">
+                <input type="radio" name="payMethod" value="virtual" />
+                <span>Virtual</span>
+              </label>
+            </div>
+            <label class="field" id="cashBox">
+              <span>Recibido</span>
+              <input id="cashReceived" type="number" inputmode="decimal" placeholder="0" />
+            </label>
+            <div class="closeTotals mt0">
+              <div><span>Total</span><b id="payTotal">$0,00</b></div>
+              <div><span>Cambio</span><b id="payChange">$0,00</b></div>
+            </div>
+          </div>
+          <div class="modalActions">
+            <button class="btn" id="payCancel">Cancelar (Esc)</button>
+            <button class="btn primary" id="payConfirm">Confirmar</button>
+          </div>
+          <div class="error" id="payError" hidden></div>
+        </div>
+      </div>
+
+      <div class="modal" id="modal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle">Reiniciar base de datos</div>
+          <div class="modalText">
+            Esto borra ventas y movimientos de caja, y pone el stock en 0.
+            <br />
+            <b>Las imágenes NO se borran</b> (ni archivos ni mapeos).
+            <br />
+            Escribe <b>BORRAR</b> para confirmar.
+          </div>
+          <input id="confirmText" class="modalInput" placeholder="BORRAR" />
+          <div class="modalActions">
+            <button class="btn" id="btnCancel">Cancelar</button>
+            <button class="btn danger" id="btnConfirm">Borrar todo</button>
+          </div>
+          <div class="error" id="modalError" hidden></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
