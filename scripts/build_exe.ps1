@@ -16,9 +16,19 @@ if ($Clean) {
   if (Test-Path "$repoRoot\dist") { Remove-Item "$repoRoot\dist" -Recurse -Force }
 }
 
+# Prefer venv python (more reproducible)
+$venvPy = Join-Path $repoRoot ".venv\Scripts\python.exe"
+$py = "python"
+if (Test-Path $venvPy) {
+  $py = $venvPy
+  Write-Host "Usando venv: $py" -ForegroundColor Green
+} else {
+  Write-Host "Aviso: no se encontro .venv. Usando 'python' del sistema." -ForegroundColor Yellow
+}
+
 # Ensure deps
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
+& $py -m pip install -r requirements.txt
+& $py -m pip install -r requirements-dev.txt
 
 $iconPath = Join-Path $repoRoot "assets\app.ico"
 $hasIcon = Test-Path $iconPath
@@ -31,7 +41,7 @@ $modeArgs = @()
 if ($OneFile) { $modeArgs += "--onefile" } else { $modeArgs += "--onedir" }
 
 $cmd = @(
-  "python", "-m", "PyInstaller",
+  $py, "-m", "PyInstaller",
   "--noconfirm",
   "--clean",
   "--windowed",
@@ -54,5 +64,9 @@ Write-Host "\nEjecutando:" -ForegroundColor Cyan
 Write-Host ($cmd -join " ")
 
 & $cmd[0] $cmd[1..($cmd.Length-1)]
+
+if ($LASTEXITCODE -ne 0) {
+  throw "PyInstaller falló con código $LASTEXITCODE"
+}
 
 Write-Host "\nOK. Revisa dist\\$Name\\ o dist\\$Name.exe" -ForegroundColor Green

@@ -1,2 +1,3 @@
 # Dev/build dependencies
 pyinstaller>=6.0
+Pillow>=10.0

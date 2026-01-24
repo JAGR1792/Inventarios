@@ -41,5 +41,20 @@ def run_app_webview(session_factory, settings: Settings) -> int:
     )
 
     # gui='edgechromium' ensures WebView2 on Windows when available.
-    webview.start(gui="edgechromium")
+    try:
+        webview.start(gui="edgechromium")
+    except Exception as e:
+        # Common end-user failure: missing Edge WebView2 Runtime.
+        msg = (
+            "No se pudo iniciar la interfaz (WebView2).\n\n"
+            "Solución: instala 'Microsoft Edge WebView2 Runtime' y vuelve a abrir la app.\n\n"
+            f"Detalle: {e}"
+        )
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, msg, settings.APP_NAME, 0x10)  # MB_ICONERROR
+        except Exception:
+            pass
+        raise
     return 0

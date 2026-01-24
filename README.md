@@ -51,6 +51,16 @@ Copia `.env.example` a `.env` y ajusta:
 - (Opcional) Importar Excel → SQLite: `python scripts/import_excel_to_db.py`
 - Iniciar desktop: `python run_desktop.py`
 
+## Instalación automática (1 comando)
+Si quieres que el repo **se arme solo** (venv + deps + build EXE + build instalador + instalación con accesos directos), corre:
+
+- `python installer.py`
+
+Opciones útiles:
+- `python installer.py --clean` (borra `build/`, `dist/`, `dist_installer/` antes)
+- `python installer.py --no-install` (solo construye los EXE, no instala en `%LOCALAPPDATA%`)
+- `python installer.py --run` (abre la app al final)
+
 ## Build (Windows .exe)
 
 1) (Opcional) Pon tu icono en `assets/app.ico`.
