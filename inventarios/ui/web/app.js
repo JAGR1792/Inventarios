@@ -1007,59 +1007,141 @@ function initWebChannel() {
   new QWebChannel(qt.webChannelTransport, (channel) => {
     state.backend = channel.objects.backend
 
-    state.backend.getAppInfo().then((info) => {
-      document.getElementById('appName').textContent = info.app_name || 'Inventarios POS'
-      if (info.db_file) {
-        document.getElementById('appSub').textContent = `DB: ${info.db_file}`
-      }
-      // Also log for troubleshooting.
-      // eslint-disable-next-line no-console
-      console.log('Inventarios POS DB:', info.db_url || info.db_file || '')
-    })
-
-    setupHandlers()
-    const page = (document.body?.dataset?.page || 'store').trim()
-
-    // Only use legacy in-page tab switching if tabs are buttons.
-    const legacyTabs = document.getElementById('tabStore')?.tagName === 'BUTTON'
-    if (legacyTabs) {
-      setTab(page === 'summary' ? 'summary' : 'store')
-    } else {
-      state.activeTab = page
-      if (page === 'summary') {
-        setTimeout(() => {
-          refreshSummary()
-          refreshCashCloses()
-        }, 0)
-      }
-    }
-
-    const cashDay = document.getElementById('cashDay')
-    if (cashDay) {
-      cashDay.value = todayIso()
-      refreshCashPanel()
-    }
-
-    if (document.getElementById('cashCloseModal') && window.location.hash === '#close') {
-      setTimeout(() => openCashCloseModal(), 0)
-    }
-
-    const catSel = document.getElementById('storeCategory')
-    if (catSel) {
-      loadCategories()
-        .catch(() => { /* ignore */ })
-        .finally(() => {
-          if (document.getElementById('storeGrid')) searchProducts('', 'store')
-        })
-    }
+    initBackendCommon()
   })
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  if (typeof qt === 'undefined') {
-    document.body.innerHTML = '<div style="padding:18px;font-family:system-ui">Error: Qt WebChannel no disponible</div>'
+let _backendInited = false
+
+function setBridgeStatus(msg, isError) {
+  const id = 'bridgeStatus'
+  const existing = document.getElementById(id)
+
+  if (!msg) {
+    if (existing) existing.remove()
     return
   }
-  initWebChannel()
+
+  const el = existing || document.createElement('div')
+  el.id = id
+  el.style.position = 'fixed'
+  el.style.left = '12px'
+  el.style.bottom = '12px'
+  el.style.zIndex = '99999'
+  el.style.padding = '10px 12px'
+  el.style.borderRadius = '10px'
+  el.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Arial'
+  el.style.fontSize = '13px'
+  el.style.background = isError ? 'rgba(140, 25, 25, 0.92)' : 'rgba(20, 20, 20, 0.75)'
+  el.style.color = '#fff'
+  el.style.backdropFilter = 'blur(6px)'
+  el.textContent = String(msg)
+
+  if (!existing) document.body.appendChild(el)
+}
+
+function initBackendCommon() {
+  if (_backendInited) return
+  if (!state.backend) return
+  _backendInited = true
+
+  setBridgeStatus(null)
+
+  state.backend.getAppInfo().then((info) => {
+    const appName = document.getElementById('appName')
+    if (appName) appName.textContent = info.app_name || 'Inventarios POS'
+    if (info.db_file) {
+      const appSub = document.getElementById('appSub')
+      if (appSub) appSub.textContent = `DB: ${info.db_file}`
+    }
+    // eslint-disable-next-line no-console
+    console.log('Inventarios POS DB:', info.db_url || info.db_file || '')
+  }).catch((e) => {
+    // eslint-disable-next-line no-console
+    console.error('getAppInfo error:', e)
+  })
+
+  setupHandlers()
+  const page = (document.body?.dataset?.page || 'store').trim()
+
+  // Only use legacy in-page tab switching if tabs are buttons.
+  const legacyTabs = document.getElementById('tabStore')?.tagName === 'BUTTON'
+  if (legacyTabs) {
+    setTab(page === 'summary' ? 'summary' : 'store')
+  } else {
+    state.activeTab = page
+    if (page === 'summary') {
+      setTimeout(() => {
+        refreshSummary()
+        refreshCashCloses()
+      }, 0)
+    }
+  }
+
+  const cashDay = document.getElementById('cashDay')
+  if (cashDay) {
+    cashDay.value = todayIso()
+    refreshCashPanel()
+  }
+
+  if (document.getElementById('cashCloseModal') && window.location.hash === '#close') {
+    setTimeout(() => openCashCloseModal(), 0)
+  }
+
+  const catSel = document.getElementById('storeCategory')
+  if (catSel) {
+    loadCategories()
+      .catch(() => { /* ignore */ })
+      .finally(() => {
+        if (document.getElementById('storeGrid')) searchProducts('', 'store')
+      })
+  }
+}
+
+function initPyWebview() {
+  // pywebview injects window.pywebview + window.pywebview.api.
+  if (!window.pywebview || !window.pywebview.api) return
+  state.backend = window.pywebview.api
+  initBackendCommon()
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (typeof qt !== 'undefined') {
+    // Qt WebEngine path
+    initWebChannel()
+    rerenderAll()
+    return
+  }
+
+  // pywebview path: may not be ready yet at DOMContentLoaded
+  if (window.pywebview && window.pywebview.api) {
+    initPyWebview()
+    rerenderAll()
+    return
+  }
+
+  // Neither bridge is available yet. This is normal for pywebview: wait for 'pywebviewready'.
+  setBridgeStatus('Cargando…', false)
+
+  // As a fallback, poll briefly in case the event doesn't fire for some reason.
+  let tries = 0
+  const t = setInterval(() => {
+    tries += 1
+    if (window.pywebview && window.pywebview.api) {
+      clearInterval(t)
+      initPyWebview()
+      rerenderAll()
+      return
+    }
+    if (tries >= 40) {
+      clearInterval(t)
+      setBridgeStatus('Error: backend bridge no disponible (Qt WebChannel / pywebview)', true)
+    }
+  }, 100)
+})
+
+// pywebview emits this event when the bridge is ready.
+window.addEventListener('pywebviewready', () => {
+  initPyWebview()
   rerenderAll()
 })
