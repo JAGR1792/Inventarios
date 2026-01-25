@@ -1,0 +1,366 @@
+/* Tablet/touch overrides (Fully Kiosk / Android) — keeps desktop styles intact */
+
+@media (pointer: coarse), (max-width: 900px) {
+  /* Touch-first defaults */
+  body{
+    font-size: 16px;
+    line-height: 1.25;
+  }
+
+  button, input, select, textarea{
+    font-size: 16px;
+  }
+
+  /* Better tap behavior */
+  .btn, .tab, button, a{
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(255,255,255,.12);
+  }
+
+  :root{
+    /* Reduce expensive blur a bit on low-end devices */
+    --blur: 8px;
+  }
+
+  /* Make header wrap nicely and increase touch targets */
+  .topbar{flex-wrap:wrap; gap:10px}
+  .tabs{width:100%; justify-content:space-between}
+  .actions{width:100%; flex-wrap:wrap}
+
+  .btn{padding:12px 14px; border-radius:14px}
+  .tab{padding:12px 14px}
+
+  /* Minimum touch target size */
+  .btn, .tab{
+    min-height: 44px;
+  }
+
+  .search input,
+  .field select,
+  .field input,
+  .modalInput{
+    min-height: 46px;
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+
+  /* Active feedback (hover is unreliable on touch) */
+  .btn:hover{background:rgba(255,255,255,.06)}
+  .btn:active{transform: translateY(1px); filter: brightness(1.06)}
+  .tab:active{filter: brightness(1.08)}
+
+  /* Reduce layout jank and make scrolling feel better */
+  .grid, .cartItems, .cashWrap, .summary2, .tableWrap{
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Store: bottom-sheet ticket (tap header to expand/collapse) */
+  :root{
+    /* Collapsed still shows Total + Cobrar comfortably */
+    --sheetCollapsed: clamp(180px, 28vh, 280px);
+    /* Expanded covers almost the whole screen for full editing */
+    --sheetExpanded: calc(100vh - 60px - env(safe-area-inset-top));
+  }
+
+  body[data-page="store"] .shell{
+    grid-template-columns: 1fr;
+    padding-bottom: calc(var(--sheetCollapsed) + 18px + env(safe-area-inset-bottom));
+  }
+
+  /* Cash + Summary: use maximum screen width (no empty right column on tablet) */
+  body[data-page="cash"] .shell,
+  body[data-page="summary"] .shell{
+    grid-template-columns: 1fr;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  body[data-page="cash"] .cashWrap,
+  body[data-page="summary"] .summary2{
+    padding: 10px;
+  }
+
+  /* Summary: the sidebar is redundant on tablet (tabs already exist); hide to maximize tables */
+  body[data-page="summary"] #cashier{
+    display: none;
+  }
+
+  /* Store layout: use full width (avoid empty right space) */
+  body[data-page="store"] .main{
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  body[data-page="store"] .panel{
+    width: 100%;
+  }
+
+  body[data-page="store"] .grid{
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  body[data-page="store"] #cashier{
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 120;
+    padding: 0 12px calc(12px + env(safe-area-inset-bottom));
+    pointer-events: none;
+  }
+
+  body[data-page="store"] #cashier .sidebarCard{
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-radius: 18px;
+    height: var(--sheetCollapsed);
+    overflow: hidden;
+  }
+
+  body[data-page="store"] #cashier .sidebarCard.dragging{
+    transition: none !important;
+  }
+
+  /* While resizing the sheet, prevent the page/grid from stealing the gesture */
+  html[data-sheetdrag="1"] body{
+    touch-action: none !important;
+    overscroll-behavior: none;
+  }
+
+  html[data-sheetdrag="1"] body[data-page="store"] .grid{
+    touch-action: none !important;
+  }
+
+  html[data-sheet="open"] body[data-page="store"] #cashier .sidebarCard{
+    height: var(--sheetExpanded);
+  }
+
+  body[data-page="store"] #cashier .cartHeader{
+    cursor: pointer;
+    user-select: none;
+    gap: 10px;
+  }
+
+  body[data-page="store"] #cashier .cartActions{
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  body[data-page="store"] #btnSheet{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body[data-page="store"] #cashier .sheetToggleBtn{
+    min-height: 40px;
+    height: 40px;
+    width: 44px;
+    padding: 0;
+    border-radius: 999px;
+    opacity: .85;
+  }
+
+  body[data-page="store"] #cashier .sheetToggleBtn:active{
+    opacity: 1;
+  }
+
+  body[data-page="store"] #cashier .cartItems{
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    /*Glass pero no tan transparente*/
+    background: #0b1d3a;
+  }
+
+  body[data-page="store"] #cashier .cartFooter{
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .sheetHandle{
+    width: 64px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.22);
+    margin: 6px auto 8px;
+    touch-action: none;
+  }
+
+  /* Cart controls: larger +/- for fingers */
+  .cartItem{gap:10px}
+  .cartItem .qty{gap:10px}
+  .cartItem .qty button{
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    font-size: 18px;
+  }
+  .cartItem .qty div{
+    min-width: 28px;
+    text-align: center;
+    font-weight: 900;
+  }
+
+  /* Grid: slightly larger cards, fewer columns */
+  .grid{
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+  }
+
+  .thumb{width:64px; height:64px}
+
+  .pName{font-size: 15px}
+  .pPrice{font-size: 18px}
+
+  /* On touch, hover styles are wasted */
+  .cardP:hover{border-color:var(--glassBorder); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02))}
+
+  /* Slightly reduce density in tables */
+  .table td{padding:12px 8px}
+
+  /* Modal fits better */
+  .modalCard{width: min(640px, calc(100% - 18px))}
+
+  /* Comfortable spacing around bottom (kiosk bars / gesture area) */
+  .toast{bottom: calc(16px + env(safe-area-inset-bottom))}
+}
+
+/* Extra-aggressive performance mode. Enable with URL ?lite=1 (recommended for low-end Android WebView). */
+html[data-lite="1"] body{
+  background: var(--bg) !important;
+}
+
+html[data-lite="1"] .panel,
+html[data-lite="1"] .card,
+html[data-lite="1"] .cardP,
+html[data-lite="1"] .cart,
+html[data-lite="1"] .sidebarCard,
+html[data-lite="1"] .topbar,
+html[data-lite="1"] .tabs,
+html[data-lite="1"] .toolbar,
+html[data-lite="1"] .modalCard,
+html[data-lite="1"] .table td{
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+html[data-lite="1"] :root{
+  --blur: 0px;
+  --shadow: none;
+}
+
+html[data-lite="1"] .panel,
+html[data-lite="1"] .card,
+html[data-lite="1"] .cardP,
+html[data-lite="1"] .cart,
+html[data-lite="1"] .topbar,
+html[data-lite="1"] .tabs,
+html[data-lite="1"] .toolbar,
+html[data-lite="1"] .modalCard{
+  background: rgba(16,31,63,.55) !important;
+}
+
+html[data-lite="1"] .grid{
+  /* Hint the browser to isolate layout/paint a bit */
+  contain: content;
+}
+
+html[data-lite="1"] .cardP{
+  content-visibility: auto;
+  contain-intrinsic-size: 160px 220px;
+}
+
+/* Biggest win for low-end WebView: avoid nested scroll areas (scroll the page instead). */
+html[data-lite="1"] body,
+html[data-lite="1"] .app,
+html[data-lite="1"] .shell,
+html[data-lite="1"] .main,
+html[data-lite="1"] .panel{
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
+html[data-lite="1"] .shell{
+  display: block !important;
+  padding: 10px !important;
+}
+
+html[data-lite="1"] body[data-page="store"] .shell{
+  padding-bottom: calc(var(--sheetCollapsed, 170px) + 18px) !important;
+}
+
+html[data-lite="1"] body[data-page="cash"] .cashWrap,
+html[data-lite="1"] body[data-page="summary"] .summary2{
+  padding: 10px !important;
+}
+
+html[data-lite="1"] body[data-page="summary"] #cashier{
+  display: none !important;
+}
+
+/* Esto hace que el contenido de la tienda use todo el ancho disponible */
+
+html[data-lite="1"] body[data-page="store"] .main{
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+html[data-lite="1"] body[data-page="store"] .panel{
+  width: 100% !important;
+}
+
+html[data-lite="1"] body[data-page="store"] .grid{
+  width: 100% !important;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+}
+
+html[data-lite="1"] .grid,
+html[data-lite="1"] .cartItems,
+html[data-lite="1"] .cashWrap,
+html[data-lite="1"] .summary2,
+html[data-lite="1"] .tableWrap{
+  overflow: visible !important;
+}
+
+/* Exception: store bottom-sheet needs cart scroll and fixed positioning */
+html[data-lite="1"] body[data-page="store"] #cashier{
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 120 !important;
+  padding: 0 12px calc(12px + env(safe-area-inset-bottom)) !important;
+  pointer-events: none !important;
+}
+
+html[data-lite="1"] body[data-page="store"] #cashier .sidebarCard{
+  pointer-events: auto !important;
+  overflow: hidden !important;
+}
+
+html[data-lite="1"] body[data-page="store"] #cashier .cartItems{
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+html[data-lite="1"] body{
+  touch-action: pan-y;
+}
+
+html[data-lite="1"] .grid{
+  touch-action: pan-y;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *{scroll-behavior:auto}
+}

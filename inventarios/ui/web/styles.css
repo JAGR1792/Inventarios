@@ -206,6 +206,8 @@ body{
   backdrop-filter: blur(var(--blur));
 }
 .cartHeader{display:flex; justify-content:space-between; align-items:center; padding:12px 12px; border-bottom:1px solid var(--glassBorder)}
+.cartActions{display:flex; gap:8px; align-items:center}
+#btnSheet{display:none}
 .cartTitle{font-weight:900}
 .cartItems{flex:1; overflow:auto; padding:8px}
 .cartItem{display:grid; grid-template-columns: 1fr auto; gap:6px; padding:10px; border:1px solid var(--glassBorder); border-radius:14px; background:rgba(255,255,255,.04); margin-bottom:8px}

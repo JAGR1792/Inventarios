@@ -1,6 +1,37 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-instance/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Local env / secrets
 .env
-msal_cache.bin
+.env.*
+
+# Local app data (SQLite, caches, images)
+instance/
+*.sqlite
+*.sqlite3
+*.db
+
+# Build/packaging outputs (PyInstaller, etc.)
+build/
+dist/
+dist_installer/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.lnk
+.vscode/
+
+# Logs
+*.log

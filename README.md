@@ -51,26 +51,22 @@ Copia `.env.example` a `.env` y ajusta:
 - (Opcional) Importar Excel → SQLite: `python scripts/import_excel_to_db.py`
 - Iniciar desktop: `python run_desktop.py`
 
-## Instalación automática (1 comando)
-Si quieres que el repo **se arme solo** (venv + deps + build EXE + build instalador + instalación con accesos directos), corre:
+## Modo tablet (LAN / navegador)
+Para usar el POS desde una tablet Android en la misma red (sin instalar nada en la tablet):
 
-- `python installer.py`
+- Iniciar servidor web: `python run_server.py --host 0.0.0.0 --port 8000`
+- En la tablet, abrir: `http://IP-DE-LA-PC:8000/store.html?lite=1`
 
-Opciones útiles:
-- `python installer.py --clean` (borra `build/`, `dist/`, `dist_installer/` antes)
-- `python installer.py --no-install` (solo construye los EXE, no instala en `%LOCALAPPDATA%`)
-- `python installer.py --run` (abre la app al final)
+Notas:
+- `?lite=1` es recomendado para Android WebView (menos efectos, más fluido).
+- La carpeta `instance/` guarda la DB e imágenes locales y **no se versiona**.
 
-## Build (Windows .exe)
-
-1) (Opcional) Pon tu icono en `assets/app.ico`.
-
-2) En PowerShell, desde la raíz del repo:
+## Build (Windows .exe) (opcional)
+Si quieres empaquetar para Windows, usa el script:
 
 - `./scripts/build_exe.ps1`
 
-Salida:
-- `dist/InventariosPOS.exe` (modo `--onefile`) o carpeta en `dist/InventariosPOS/`.
+Los artefactos `build/`, `dist/` y `dist_installer/` son **generados** y no se versionan.
 
 Reiniciar base de datos (borra ventas/pruebas):
 - UI: botón **Reiniciar DB** (pide escribir `BORRAR`)

@@ -8,9 +8,374 @@ const state = {
   lastSearchQuery: '',
   categories: ['Todas'],
   currentProductKey: null,
+  ui: {
+    tablet: false,
+    lite: false,
+    gridLimit: 0,
+    gridLimitMax: 0,
+  },
+}
+
+let _storeGridRenderSeq = 0
+
+function detectTabletMode() {
+  try {
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+    const small = window.matchMedia && window.matchMedia('(max-width: 900px)').matches
+    return Boolean(coarse || small)
+  } catch (e) {
+    return false
+  }
+}
+
+function isTabletMode() {
+  return Boolean(state.ui && state.ui.tablet)
+}
+
+function isTouchStorePage() {
+  return isTabletMode() && (document.body?.dataset?.page || '') === 'store'
+}
+
+function setSheetOpen(open) {
+  try {
+    if (open) document.documentElement.dataset.sheet = 'open'
+    else delete document.documentElement.dataset.sheet
+  } catch (e) {
+    // ignore
+  }
+}
+
+function isSheetOpen() {
+  return String(document.documentElement?.dataset?.sheet || '') === 'open'
+}
+
+async function refreshTicketToday() {
+  if (!state.backend || !isTouchStorePage()) return
+  const el = document.getElementById('ticketToday')
+  if (!el) return
+  try {
+    const res = await state.backend.getCashPanel(todayIso())
+    if (!res || !res.ok) return
+    const gross = Number(res.gross_total || 0)
+    el.hidden = false
+    el.textContent = `Hoy: $${fmtMoney(gross)}`
+  } catch (e) {
+    // ignore
+  }
+}
+
+function setupTouchTicketSheet() {
+  if (!isTouchStorePage()) return
+  const cashier = document.getElementById('cashier')
+  const card = cashier?.querySelector?.('.sidebarCard')
+  const header = card?.querySelector?.('.cartHeader')
+  if (!cashier || !card || !header) return
+
+  const getSheetHeights = () => {
+    const cs = getComputedStyle(document.documentElement)
+    const rawCollapsed = (cs.getPropertyValue('--sheetCollapsed') || '170px').trim()
+    const rawExpanded = (cs.getPropertyValue('--sheetExpanded') || '72vh').trim()
+
+    const parsePx = (v) => {
+      const n = Number(String(v).replace('px', '').trim())
+      return Number.isFinite(n) ? n : 0
+    }
+    const parseVh = (v) => {
+      const n = Number(String(v).replace('vh', '').trim())
+      return Number.isFinite(n) ? (window.innerHeight * n / 100) : 0
+    }
+
+    const collapsedPx = rawCollapsed.endsWith('vh') ? parseVh(rawCollapsed) : parsePx(rawCollapsed)
+    const expandedPx = rawExpanded.endsWith('vh') ? parseVh(rawExpanded) : parsePx(rawExpanded)
+    return {
+      collapsedPx: Math.max(120, collapsedPx || 170),
+      expandedPx: Math.max(260, expandedPx || Math.round(window.innerHeight * 0.72)),
+    }
+  }
+
+  const SHEET_H_KEY = 'inventarios_sheet_h'
+  const readSavedHeight = () => {
+    try {
+      const raw = String(localStorage.getItem(SHEET_H_KEY) || '').trim()
+      if (!raw) return null
+      const n = Number(raw)
+      return Number.isFinite(n) ? n : null
+    } catch (e) {
+      return null
+    }
+  }
+  const saveHeight = (px) => {
+    try { localStorage.setItem(SHEET_H_KEY, String(Math.round(px))) } catch (e) { /* ignore */ }
+  }
+  const clearSavedHeight = () => {
+    try { localStorage.removeItem(SHEET_H_KEY) } catch (e) { /* ignore */ }
+  }
+
+  const applyCollapsed = () => {
+    card.style.height = ''
+    setSheetOpen(false)
+    updateSheetBtnIcon()
+  }
+  const applyOpen = () => {
+    setSheetOpen(true)
+    // If there is a saved custom height, keep it via inline height.
+    const { collapsedPx, expandedPx } = getSheetHeights()
+    const saved = readSavedHeight()
+    if (saved != null) {
+      const clamped = Math.min(expandedPx, Math.max(collapsedPx, saved))
+      card.style.height = `${Math.round(clamped)}px`
+    } else {
+      card.style.height = ''
+    }
+    updateSheetBtnIcon()
+  }
+
+  const btnSheet = header.querySelector('#btnSheet')
+  const updateSheetBtnIcon = () => {
+    if (!btnSheet) return
+    // Collapsed shows "up" to indicate expand; open shows "down" to indicate collapse.
+    btnSheet.textContent = isSheetOpen() ? '▾' : '▴'
+  }
+
+  // Insert handle once
+  if (!card.querySelector('.sheetHandle')) {
+    const h = document.createElement('div')
+    h.className = 'sheetHandle'
+    card.insertBefore(h, header)
+  }
+
+  // Insert KPI once
+  if (!header.querySelector('#ticketToday')) {
+    const kpi = document.createElement('div')
+    kpi.id = 'ticketToday'
+    kpi.className = 'sub'
+    kpi.hidden = true
+    // Put it under the title area (left column)
+    const title = header.querySelector('.cartTitle')
+    if (title && title.parentElement) title.parentElement.appendChild(kpi)
+    else header.appendChild(kpi)
+  }
+
+  // Ensure icon is correct at startup
+  updateSheetBtnIcon()
+
+  // Default collapsed
+  applyCollapsed()
+
+  // Restore last chosen height if present (open by default)
+  {
+    const { collapsedPx, expandedPx } = getSheetHeights()
+    const saved = readSavedHeight()
+    if (saved != null) {
+      const clamped = Math.min(expandedPx, Math.max(collapsedPx, saved))
+      setSheetOpen(true)
+      card.style.height = `${Math.round(clamped)}px`
+      updateSheetBtnIcon()
+    }
+  }
+
+  let _ignoreHeaderClickUntil = 0
+
+  // Toggle on tapping header (but not when tapping buttons inside it)
+  header.addEventListener('click', (e) => {
+    if (Date.now() < _ignoreHeaderClickUntil) return
+    const btn = e.target?.closest?.('button')
+    if (btn) return
+    if (isSheetOpen()) applyCollapsed()
+    else applyOpen()
+  })
+
+  // Explicit expand/collapse button (max height <-> collapsed)
+  if (btnSheet && !btnSheet._wired) {
+    btnSheet._wired = true
+    btnSheet.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (isSheetOpen()) {
+        clearSavedHeight()
+        card.style.height = ''
+        setSheetOpen(false)
+        updateSheetBtnIcon()
+        return
+      }
+      // Expand to nearly full screen
+      const fullH = Math.max(400, window.innerHeight - 60)
+      setSheetOpen(true)
+      card.style.height = `${Math.round(fullH)}px`
+      saveHeight(fullH)
+      updateSheetBtnIcon()
+    })
+  }
+
+  // Drag to open/close (prefer drag over tap on tablets)
+  const handle = card.querySelector('.sheetHandle')
+  let dragging = false
+  let startY = 0
+  let startH = 0
+  let lastH = 0
+  let moved = 0
+  let startT = 0
+  const cartItems = card.querySelector('.cartItems')
+  let prevItemsOverflow = ''
+  let rafId = 0
+  let pendingHeight = null
+
+  const setDraggingFlag = (on) => {
+    try {
+      if (on) document.documentElement.dataset.sheetdrag = '1'
+      else delete document.documentElement.dataset.sheetdrag
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const flushHeight = () => {
+    rafId = 0
+    if (pendingHeight == null) return
+    card.style.height = `${pendingHeight}px`
+    pendingHeight = null
+  }
+
+  const beginDrag = (clientY, sourceEl, preventDefaultFn) => {
+    const btn = sourceEl?.closest?.('button')
+    if (btn) return
+    const { collapsedPx, expandedPx } = getSheetHeights()
+    dragging = true
+    moved = 0
+    startT = performance.now()
+    startY = clientY
+    setDraggingFlag(true)
+    // Prefer current inline height; fallback to open/collapsed defaults.
+    const currentInline = Number(String(card.style.height || '').replace('px', '').trim())
+    const hasInline = Number.isFinite(currentInline) && currentInline > 0
+    startH = hasInline ? currentInline : (isSheetOpen() ? expandedPx : collapsedPx)
+    lastH = startH
+    card.classList.add('dragging')
+    if (cartItems) {
+      prevItemsOverflow = cartItems.style.overflow || ''
+      cartItems.style.overflow = 'hidden'
+    }
+    pendingHeight = Math.round(startH)
+    if (!rafId) rafId = requestAnimationFrame(flushHeight)
+    if (preventDefaultFn) preventDefaultFn()
+  }
+
+  const moveDrag = (clientY, preventDefaultFn) => {
+    if (!dragging) return
+    const { collapsedPx, expandedPx } = getSheetHeights()
+    const dy = startY - clientY
+    moved = Math.max(moved, Math.abs(dy))
+    const next = Math.min(expandedPx, Math.max(collapsedPx, startH + dy))
+    lastH = next
+    pendingHeight = Math.round(next)
+    if (!rafId) rafId = requestAnimationFrame(flushHeight)
+    if (preventDefaultFn) preventDefaultFn()
+  }
+
+  const endDrag = (preventDefaultFn) => {
+    if (!dragging) return
+    dragging = false
+    card.classList.remove('dragging')
+    setDraggingFlag(false)
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = 0
+    }
+    flushHeight()
+    if (cartItems) cartItems.style.overflow = prevItemsOverflow
+
+    // If there was basically no movement, keep click behavior.
+    if (moved < 10) return
+
+    const { collapsedPx, expandedPx } = getSheetHeights()
+    const mid = (collapsedPx + expandedPx) / 2
+    const dt = Math.max(1, performance.now() - startT)
+    const dy = lastH - startH
+    const v = dy / dt // px/ms
+
+    // Natural snap: if user flicks up/down, respect it.
+    const open = (v > 0.35) ? true : (v < -0.35) ? false : (lastH >= mid)
+
+    // If user drags near the minimum, collapse and clear the custom height.
+    const nearMin = lastH <= (collapsedPx + 18)
+    if (!open || nearMin) {
+      clearSavedHeight()
+      applyCollapsed()
+    } else {
+      setSheetOpen(true)
+      const finalH = Math.min(expandedPx, Math.max(collapsedPx, lastH))
+      card.style.height = `${Math.round(finalH)}px`
+      saveHeight(finalH)
+    }
+
+    // Prevent the synthetic click that some WebViews fire after drag.
+    _ignoreHeaderClickUntil = Date.now() + 450
+    if (preventDefaultFn) preventDefaultFn()
+  }
+
+  const onDown = (ev) => {
+    if (ev.pointerType === 'mouse') return
+    try { ev.currentTarget?.setPointerCapture?.(ev.pointerId) } catch (e) { /* ignore */ }
+    beginDrag(ev.clientY, ev.target, () => ev.preventDefault())
+  }
+
+  const onMove = (ev) => {
+    moveDrag(ev.clientY, () => ev.preventDefault())
+  }
+
+  const onUp = (ev) => {
+    endDrag(() => ev.preventDefault())
+  }
+
+  ;[handle, header].filter(Boolean).forEach((el) => {
+    el.addEventListener('pointerdown', onDown, { passive: false })
+    el.addEventListener('pointermove', onMove, { passive: false })
+    el.addEventListener('pointerup', onUp, { passive: false })
+    el.addEventListener('pointercancel', onUp, { passive: false })
+  })
+
+  // Touch fallback for older Android WebViews that don't deliver pointer events reliably.
+  ;[handle, header].filter(Boolean).forEach((el) => {
+    el.addEventListener('touchstart', (e) => {
+      if (!e.touches || e.touches.length !== 1) return
+      const t = e.touches[0]
+      if (!t) return
+      beginDrag(t.clientY, e.target, () => e.preventDefault())
+    }, { passive: false })
+    el.addEventListener('touchmove', (e) => {
+      if (!e.touches || e.touches.length !== 1) return
+      const t = e.touches[0]
+      if (!t) return
+      moveDrag(t.clientY, () => e.preventDefault())
+    }, { passive: false })
+    el.addEventListener('touchend', (e) => {
+      endDrag(() => e.preventDefault())
+    }, { passive: false })
+    el.addEventListener('touchcancel', (e) => {
+      endDrag(() => e.preventDefault())
+    }, { passive: false })
+  })
+
+  refreshTicketToday().catch(() => { /* ignore */ })
+}
+
+function detectLiteMode() {
+  try {
+    const u = new URL(window.location.href)
+    const raw = u.searchParams.get('lite')
+    if (raw == null) return null
+    const v = String(raw).trim().toLowerCase()
+    if (v === '0' || v === 'false') return false
+    return v === '1' || v === 'true'
+  } catch (e) {
+    return null
+  }
 }
 
 const THEME_KEY = 'inventarios_theme'
+
+// Cache formatter (Intl is expensive if recreated per call)
+const _moneyFmt = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 function getSavedTheme() {
   try {
@@ -52,7 +417,7 @@ applyTheme(getSavedTheme())
 
 function fmtMoney(value) {
   const n = Number(value || 0)
-  return n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return _moneyFmt.format(n)
 }
 
 function toast(msg) {
@@ -87,6 +452,9 @@ function setTab(name) {
 }
 
 function focusSearch() {
+  // On touch devices, auto-focusing the search box pops the software keyboard
+  // and feels janky. Let the user tap the search box explicitly.
+  if (isTabletMode() && isHttpBrowser()) return
   const el = document.getElementById('storeSearch')
   if (!el) return
   el.focus()
@@ -147,15 +515,18 @@ function showError(id, msg) {
 }
 
 function addToCartByKey(key, deltaQty) {
-  const item = state.cart.get(key)
+  const k = String(key ?? '').trim()
+  if (!k) return
+
+  const item = state.cart.get(k)
   if (!item) {
-    const p = state.products.find((x) => x.key === key)
+    const p = state.products.find((x) => String(x.key ?? '').trim() === k)
     if (!p) return
     if (deltaQty <= 0) return
-    state.cart.set(key, { key: p.key, producto: p.producto, precio_final: p.precio_final, qty: deltaQty })
+    state.cart.set(k, { key: k, producto: p.producto, precio_final: p.precio_final, qty: deltaQty })
   } else {
     const next = Number(item.qty) + Number(deltaQty)
-    if (next <= 0) state.cart.delete(key)
+    if (next <= 0) state.cart.delete(k)
     else item.qty = next
   }
   rerenderAll()
@@ -189,9 +560,22 @@ function escapeHtmlAttr(s) {
 async function searchProducts(query, mode) {
   state.lastSearchQuery = query
   if (!state.backend) return
-  const results = await state.backend.searchProducts(query, 180)
+
+  // On low-end tablets, reduce payload + rendering pressure.
+  const limit = isTabletMode() ? (state.ui.lite ? 70 : 90) : 180
+  const results = await state.backend.searchProducts(query, limit)
   if (state.lastSearchQuery !== query) return
   state.products = Array.isArray(results) ? results : []
+
+  // Reset pagination on new results
+  if (state.ui.tablet) {
+    const start = state.ui.lite ? 24 : 60
+    state.ui.gridLimit = start
+    state.ui.gridLimitMax = state.ui.lite ? 96 : 999999
+  } else {
+    state.ui.gridLimit = 999999
+    state.ui.gridLimitMax = 999999
+  }
 
   if (document.getElementById('storeGrid')) renderStoreGrid()
 }
@@ -213,47 +597,117 @@ function filteredProducts() {
 function renderStoreGrid() {
   const grid = document.getElementById('storeGrid')
   if (!grid) return
+
+  const seq = (_storeGridRenderSeq += 1)
   grid.innerHTML = ''
 
-  const frag = document.createDocumentFragment()
+  const all = filteredProducts()
+  const tablet = isTabletMode()
+  const lite = Boolean(state.ui.lite)
+  const limitRaw = Math.max(0, Number(state.ui.gridLimit || 0))
+  const maxRaw = Math.max(0, Number(state.ui.gridLimitMax || 0))
+  const maxLimit = (tablet && maxRaw > 0) ? maxRaw : 999999
+  const limit = Math.min(limitRaw || maxLimit, maxLimit)
+  const items = tablet ? all.slice(0, Math.min(all.length, limit)) : all
+  const chunkSize = tablet ? 24 : 80
+  let i = 0
 
-  for (const p of filteredProducts()) {
-    const el = document.createElement('div')
-    el.className = 'cardP'
-    el.dataset.key = p.key
+  const renderChunk = () => {
+    if (_storeGridRenderSeq !== seq) return
+    const frag = document.createDocumentFragment()
+    const end = Math.min(items.length, i + chunkSize)
 
-    const img = p.image_url ? `<img src="${escapeHtmlAttr(p.image_url)}" alt="" loading="lazy" decoding="async" />` : '📦'
+    for (; i < end; i += 1) {
+      const p = items[i]
+      const el = document.createElement('div')
+      el.className = 'cardP'
+      el.dataset.key = String(p.key ?? '').trim()
 
-    const stock = Number(p.unidades || 0)
-    const stockClass = stock <= 0 ? 'stockBad' : (stock <= 2 ? 'stockLow' : 'stockOk')
+      const img = p.image_url ? `<img src="${escapeHtmlAttr(p.image_url)}" alt="" loading="lazy" decoding="async" />` : '📦'
 
-    el.innerHTML = `
-      <div class="cardTop">
-        <div class="thumb">${img}</div>
-        <div style="flex:1">
-          <div class="pName">${escapeHtml(p.producto)}</div>
-          <div class="pDesc">${escapeHtml(p.descripcion || '')}</div>
-        </div>
-      </div>
-      <div class="pMeta">
-        <div>Stock: <span class="stock ${stockClass}">${escapeHtml(p.unidades)}</span></div>
-        <div class="pPrice">$${fmtMoney(p.precio_final)}</div>
-      </div>
-      <div class="rowBtns">
-        <button class="btn" data-add="${escapeHtmlAttr(p.key)}">Agregar</button>
-        <button class="btn ghost" data-add2="${escapeHtmlAttr(p.key)}">+2</button>
-      </div>
-    `
+      const stock = Number(p.unidades || 0)
+      const stockClass = stock <= 0 ? 'stockBad' : (stock <= 2 ? 'stockLow' : 'stockOk')
 
-    frag.appendChild(el)
+      // On tablet, reduce DOM a bit (less text + fewer buttons)
+      if (tablet) {
+        el.innerHTML = `
+          <div class="cardTop">
+            <div class="thumb">${img}</div>
+            <div style="flex:1">
+              <div class="pName">${escapeHtml(p.producto)}</div>
+            </div>
+          </div>
+          <div class="pMeta">
+            <div>Stock: <span class="stock ${stockClass}">${escapeHtml(p.unidades)}</span></div>
+            <div class="pPrice">$${fmtMoney(p.precio_final)}</div>
+          </div>
+          <div class="rowBtns">
+            <button class="btn" data-add="${escapeHtmlAttr(p.key)}">Agregar</button>
+          </div>
+        `
+      } else {
+        el.innerHTML = `
+          <div class="cardTop">
+            <div class="thumb">${img}</div>
+            <div style="flex:1">
+              <div class="pName">${escapeHtml(p.producto)}</div>
+              <div class="pDesc">${escapeHtml(p.descripcion || '')}</div>
+            </div>
+          </div>
+          <div class="pMeta">
+            <div>Stock: <span class="stock ${stockClass}">${escapeHtml(p.unidades)}</span></div>
+            <div class="pPrice">$${fmtMoney(p.precio_final)}</div>
+          </div>
+          <div class="rowBtns">
+            <button class="btn" data-add="${escapeHtmlAttr(p.key)}">Agregar</button>
+            <button class="btn ghost" data-add2="${escapeHtmlAttr(p.key)}">+2</button>
+          </div>
+        `
+      }
+
+      frag.appendChild(el)
+    }
+
+    grid.appendChild(frag)
+    if (i < items.length) {
+      // Yield to keep scrolling/taps responsive on low-end devices.
+      setTimeout(renderChunk, 0)
+    }
   }
 
-  grid.appendChild(frag)
+  renderChunk()
+
+  // Tablet pagination: never render hundreds of cards at once.
+  if (tablet && all.length > items.length) {
+    const more = document.createElement('div')
+    more.style.gridColumn = '1 / -1'
+    more.style.display = 'flex'
+    more.style.justifyContent = 'center'
+    more.style.padding = '8px 0 14px'
+    const atMax = items.length >= maxLimit
+    if (atMax) {
+      more.innerHTML = `<div class="hint" style="text-align:center">Mostrando ${items.length} de ${all.length}. Para ver otros productos, escribe más letras en la búsqueda.</div>`
+      grid.appendChild(more)
+      return
+    }
+
+    more.innerHTML = `<button class="btn ${lite ? '' : 'ghost'}" id="btnLoadMore">Cargar más (${items.length}/${all.length})</button>`
+    grid.appendChild(more)
+    const btn = document.getElementById('btnLoadMore')
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const step = lite ? 24 : 60
+        const next = Number(state.ui.gridLimit || 0) + step
+        state.ui.gridLimit = Math.min(next, maxLimit)
+        renderStoreGrid()
+      }, { once: true })
+    }
+  }
 }
 
 function addFirstResult() {
   if (state.products.length === 0) return
-  addToCartByKey(state.products[0].key, 1)
+  addToCartByKey(String(state.products[0].key ?? '').trim(), 1)
 
   const ss = document.getElementById('storeSearch')
   if (ss) ss.value = ''
@@ -386,6 +840,9 @@ async function confirmPay() {
   const pm = String(res.payment_method || method)
   const change = res.change_given != null ? ` • Cambio $${fmtMoney(res.change_given)}` : ''
   toast(`Venta #${res.sale_id} • ${pm.toUpperCase()} • Total $${fmtMoney(res.total)}${change}`)
+
+  // Keep the touch ticket KPI up to date
+  refreshTicketToday().catch(() => { /* ignore */ })
   clearCart()
 
   if (document.getElementById('cashDay')) refreshCashPanel()
@@ -657,7 +1114,7 @@ async function closeCashDay() {
 function openProductModal(key) {
   const k = String(key || '').trim()
   if (!k) return
-  const p = state.products.find((x) => x.key === k)
+  const p = state.products.find((x) => String(x.key ?? '').trim() === k)
   if (!p) return
 
   state.currentProductKey = k
@@ -706,7 +1163,7 @@ async function saveProductCategory() {
     document.getElementById('pmError').textContent = 'No se pudo guardar la categoría'
     return
   }
-  const p = state.products.find((x) => x.key === key)
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
   if (p) p.category = cat
   await loadCategories()
   rerenderAll()
@@ -716,13 +1173,34 @@ async function saveProductCategory() {
 async function pickProductImage() {
   const key = state.currentProductKey
   if (!key) return
+
+  // Web mode (tablet): upload file
+  if (state.backend?.uploadProductImage) {
+    const file = await pickFile('image/*')
+    if (!file) return
+    const res = await state.backend.uploadProductImage(key, file)
+    if (!res || !res.ok) {
+      document.getElementById('pmError').hidden = false
+      document.getElementById('pmError').textContent = res?.error || 'No se pudo cargar imagen'
+      return
+    }
+    const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+    if (p) p.image_url = res.image_url || p.image_url
+    const thumb = document.getElementById('pmThumb')
+    if (res.image_url) thumb.innerHTML = `<img src="${escapeHtmlAttr(res.image_url)}" alt="" />`
+    renderStoreGrid()
+    toast('Imagen actualizada')
+    return
+  }
+
+  // Desktop mode (pywebview): open OS file picker
   const res = await state.backend.pickProductImage(key)
   if (!res || !res.ok) {
     document.getElementById('pmError').hidden = false
     document.getElementById('pmError').textContent = res?.error || 'No se pudo cargar imagen'
     return
   }
-  const p = state.products.find((x) => x.key === key)
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
   if (p) p.image_url = res.image_url || p.image_url
   const thumb = document.getElementById('pmThumb')
   if (res.image_url) thumb.innerHTML = `<img src="${escapeHtmlAttr(res.image_url)}" alt="" />`
@@ -739,7 +1217,7 @@ async function clearProductImage() {
     document.getElementById('pmError').textContent = res?.error || 'No se pudo quitar imagen'
     return
   }
-  const p = state.products.find((x) => x.key === key)
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
   if (p) p.image_url = null
   document.getElementById('pmThumb').textContent = '📦'
   renderStoreGrid()
@@ -805,6 +1283,26 @@ async function confirmReset() {
 
 async function doImport() {
   if (!state.backend) return
+
+  // Web mode (tablet): upload xlsx
+  if (state.backend.importExcelUpload) {
+    const file = await pickFile('.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    if (!file) return
+    const res = await state.backend.importExcelUpload(file)
+    if (!res || !res.ok) {
+      toast(res?.error || 'Import falló')
+      return
+    }
+    toast(`Importado ${res.imported} • Actualizados ${res.upserted}`)
+    if (document.getElementById('storeCategory')) await loadCategories()
+    if (document.getElementById('storeGrid')) {
+      const ss = document.getElementById('storeSearch')
+      await searchProducts(ss ? (ss.value || '') : '', 'store')
+    }
+    if (document.getElementById('cashDay')) refreshCashPanel()
+    return
+  }
+
   const res = await state.backend.importExcel()
   if (!res || !res.ok) {
     toast(res?.error || 'Import falló')
@@ -836,7 +1334,8 @@ function setupHandlers() {
     }
   }
 
-  if (storeSearch) storeSearch.addEventListener('input', debounce(() => searchProducts(storeSearch.value, 'store'), 120))
+  const debounceMs = isTabletMode() ? (state.ui.lite ? 380 : 260) : 120
+  if (storeSearch) storeSearch.addEventListener('input', debounce(() => searchProducts(storeSearch.value, 'store'), debounceMs))
 
   const storeCategory = document.getElementById('storeCategory')
   if (storeCategory) storeCategory.addEventListener('change', () => renderStoreGrid())
@@ -851,6 +1350,30 @@ function setupHandlers() {
   const btnClear = document.getElementById('btnClear')
   if (btnCheckout) btnCheckout.addEventListener('click', () => checkout())
   if (btnClear) btnClear.addEventListener('click', clearCart)
+
+  // Bottom-sheet toggle button (tablet): expand to full screen or collapse
+  const btnSheet = document.getElementById('btnSheet')
+  if (btnSheet && !btnSheet._globalWired) {
+    btnSheet._globalWired = true
+    const card = document.querySelector('#cashier .sidebarCard')
+    btnSheet.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const open = isSheetOpen()
+      if (open) {
+        // Collapse
+        if (card) card.style.height = ''
+        setSheetOpen(false)
+        btnSheet.textContent = '▴'
+      } else {
+        // Expand to nearly full screen
+        const fullH = Math.max(400, window.innerHeight - 60)
+        if (card) card.style.height = `${Math.round(fullH)}px`
+        setSheetOpen(true)
+        btnSheet.textContent = '▾'
+      }
+    })
+  }
 
   const btnReset = document.getElementById('btnReset')
   const btnCancel = document.getElementById('btnCancel')
@@ -1032,10 +1555,118 @@ function setBridgeStatus(msg, isError) {
   if (!existing) document.body.appendChild(el)
 }
 
+function isHttpBrowser() {
+  const p = String(window.location?.protocol || '')
+  return p === 'http:' || p === 'https:'
+}
+
+function createHttpBackend(baseUrl) {
+  const base = String(baseUrl || '')
+
+  async function httpJson(method, path, body) {
+    const url = base + path
+    const opt = { method, headers: {} }
+    if (body !== undefined && body !== null) {
+      opt.headers['Content-Type'] = 'application/json'
+      opt.body = JSON.stringify(body)
+    }
+    const res = await fetch(url, opt)
+    const txt = await res.text()
+    let data
+    try { data = txt ? JSON.parse(txt) : null } catch (e) { data = null }
+    if (!res.ok) {
+      const msg = (data && data.error) ? data.error : (`HTTP ${res.status}`)
+      throw new Error(msg)
+    }
+    return data
+  }
+
+  async function httpUpload(path, formData) {
+    const url = base + path
+    const res = await fetch(url, { method: 'POST', body: formData })
+    const txt = await res.text()
+    let data
+    try { data = txt ? JSON.parse(txt) : null } catch (e) { data = null }
+    if (!res.ok) {
+      const msg = (data && data.error) ? data.error : (`HTTP ${res.status}`)
+      throw new Error(msg)
+    }
+    return data
+  }
+
+  return {
+    getAppInfo: () => httpJson('GET', '/api/getAppInfo'),
+    searchProducts: (q, limit) => httpJson('POST', '/api/searchProducts', { q, limit }),
+    getCategories: () => httpJson('GET', '/api/getCategories'),
+    checkout: (lines, payment) => httpJson('POST', '/api/checkout', { lines, payment }),
+
+    getSummary: (limit) => httpJson('GET', `/api/getSummary?limit=${encodeURIComponent(String(limit ?? 25))}`),
+    listCashCloses: (limit) => httpJson('GET', `/api/listCashCloses?limit=${encodeURIComponent(String(limit ?? 30))}`),
+    getCashPanel: (day) => httpJson('GET', `/api/getCashPanel?day=${encodeURIComponent(String(day || ''))}`),
+
+    useSuggestedOpeningCash: (day) => httpJson('POST', '/api/useSuggestedOpeningCash', { day }),
+    setOpeningCash: (day, opening_cash) => httpJson('POST', '/api/setOpeningCash', { day, opening_cash }),
+    addCashWithdrawal: (day, amount, notes) => httpJson('POST', '/api/addCashWithdrawal', { day, amount, notes }),
+    deleteCashMove: (id) => httpJson('POST', '/api/deleteCashMove', { id }),
+    closeCashDay: (day, cash_counted, carry_to_next_day, notes) => httpJson('POST', '/api/closeCashDay', { day, cash_counted, carry_to_next_day, notes }),
+
+    setProductCategory: (key, category) => httpJson('POST', '/api/setProductCategory', { key, category }),
+    clearProductImage: (key) => httpJson('POST', '/api/clearProductImage', { key }),
+    resetDatabase: (confirm_text) => httpJson('POST', '/api/resetDatabase', { confirm_text }),
+    openImagesFolder: () => httpJson('POST', '/api/openImagesFolder'),
+
+    uploadProductImage: async (key, file) => {
+      const fd = new FormData()
+      fd.append('key', String(key || ''))
+      fd.append('file', file)
+      return httpUpload('/api/uploadProductImage', fd)
+    },
+
+    importExcelUpload: async (file) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      return httpUpload('/api/importExcelUpload', fd)
+    },
+  }
+}
+
+function pickFile(accept) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    if (accept) input.accept = accept
+    input.style.position = 'fixed'
+    input.style.left = '-10000px'
+    input.style.top = '-10000px'
+    document.body.appendChild(input)
+
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0] ? input.files[0] : null
+      input.remove()
+      resolve(file)
+    }, { once: true })
+
+    input.click()
+  })
+}
+
 function initBackendCommon() {
   if (_backendInited) return
   if (!state.backend) return
   _backendInited = true
+
+  state.ui.tablet = detectTabletMode()
+
+  const liteParam = detectLiteMode()
+  // Auto-lite for tablets in browser mode unless explicitly disabled (?lite=0)
+  state.ui.lite = (liteParam === null) ? Boolean(state.ui.tablet && isHttpBrowser()) : Boolean(liteParam)
+  if (state.ui.lite) {
+    try { document.documentElement.dataset.lite = '1' } catch (e) { /* ignore */ }
+  }
+
+  // Avoid huge DOM on low-end tablets.
+  state.ui.gridLimit = state.ui.tablet ? (state.ui.lite ? 24 : 60) : 999999
+  state.ui.gridLimitMax = state.ui.tablet ? (state.ui.lite ? 96 : 999999) : 999999
 
   setBridgeStatus(null)
 
@@ -1097,10 +1728,23 @@ function initPyWebview() {
   initBackendCommon()
 }
 
+function initHttpBackend() {
+  state.backend = createHttpBackend('')
+  initBackendCommon()
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   // pywebview path: may not be ready yet at DOMContentLoaded
   if (window.pywebview && window.pywebview.api) {
     initPyWebview()
+    rerenderAll()
+    return
+  }
+
+  // Browser path: served by the Flask server.
+  if (isHttpBrowser()) {
+    setBridgeStatus('Conectando…', false)
+    initHttpBackend()
     rerenderAll()
     return
   }

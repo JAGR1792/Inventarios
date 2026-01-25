@@ -38,6 +38,8 @@ class Settings:
         return (Path(base) / safe / "instance").resolve()
 
     def __post_init__(self) -> None:
+        db_url_env_set = os.environ.get("DATABASE_URL") is not None
+
         # When packaged as an .exe, default to a per-user writable instance folder.
         if getattr(sys, "frozen", False) and os.environ.get("INSTANCE_DIR") is None:
             object.__setattr__(self, "INSTANCE_DIR", self._default_windows_instance_dir())
@@ -45,7 +47,9 @@ class Settings:
         # Always resolve INSTANCE_DIR; many other paths depend on it.
         object.__setattr__(self, "INSTANCE_DIR", Path(self.INSTANCE_DIR).resolve())
 
-        if getattr(sys, "frozen", False) and os.environ.get("DATABASE_URL") is None:
+        # If DATABASE_URL was not explicitly provided, always place the DB inside INSTANCE_DIR.
+        # This avoids mismatches when the process working directory changes (e.g. running from dist/).
+        if not db_url_env_set:
             abs_db = (self.INSTANCE_DIR / "pos.sqlite").resolve()
             object.__setattr__(self, "DATABASE_URL", f"sqlite:///{abs_db.as_posix()}")
             return
