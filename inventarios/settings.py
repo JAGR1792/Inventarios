@@ -23,7 +23,7 @@ class Settings:
 
     # Excel import (optional)
     EXCEL_IMPORT_PATH: str = os.environ.get("EXCEL_IMPORT_PATH", "GAROM OK.xlsx")
-    EXCEL_WORKSHEET_NAME: str = os.environ.get("EXCEL_WORKSHEET_NAME", "Costos")
+    EXCEL_WORKSHEET_NAME: str = os.environ.get("EXCEL_WORKSHEET_NAME", "INVENTARIO")
     LOCAL_EXCEL_ENGINE: str = os.environ.get("LOCAL_EXCEL_ENGINE", "openpyxl")
 
     # Images

@@ -67,6 +67,13 @@
     padding-bottom: calc(var(--sheetCollapsed) + 18px + env(safe-area-inset-bottom));
   }
 
+  /* Inventory: no sidebar column; use full width like Store (without bottom-sheet padding) */
+  body[data-page="inventory"] .shell{
+    grid-template-columns: 1fr;
+    padding: 10px;
+    gap: 10px;
+  }
+
   /* Cash + Summary: use maximum screen width (no empty right column on tablet) */
   body[data-page="cash"] .shell,
   body[data-page="summary"] .shell{
@@ -92,11 +99,26 @@
     min-width: 0;
   }
 
+  body[data-page="inventory"] .main{
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
   body[data-page="store"] .panel{
     width: 100%;
   }
 
+  body[data-page="inventory"] .panel{
+    width: 100%;
+  }
+
   body[data-page="store"] .grid{
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  body[data-page="inventory"] .grid{
     width: 100%;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   }
@@ -320,6 +342,11 @@ html[data-lite="1"] body[data-page="store"] .panel{
 }
 
 html[data-lite="1"] body[data-page="store"] .grid{
+  width: 100% !important;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+}
+
+html[data-lite="1"] body[data-page="inventory"] .grid{
   width: 100% !important;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
 }

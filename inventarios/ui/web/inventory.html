@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inventarios POS - Inventario</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles_tablet.css" />
+    <script defer src="inventory.js"></script>
+  </head>
+  <body data-page="inventory">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">IP</div>
+          <div>
+            <div class="name" id="appName">Inventarios POS</div>
+            <div class="sub" id="appSub">Inventario (solo stock)</div>
+          </div>
+        </div>
+
+        <nav class="tabs" role="tablist">
+          <a class="tab" id="tabStore" role="tab" href="store.html">Tienda</a>
+          <a class="tab" id="tabCash" role="tab" href="cash.html">Caja</a>
+          <a class="tab" id="tabSummary" role="tab" href="summary.html">Resumen del día</a>
+          <a class="tab active" id="tabInventory" role="tab" href="inventory.html">Inventario</a>
+        </nav>
+
+        <div class="actions">
+          <button class="btn ghost" id="btnTheme" title="Cambiar tema (System / Dark / Light)">Tema</button>
+          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
+          <button class="btn" id="btnNewProduct" title="Crear un nuevo producto">Nuevo producto</button>
+          <button class="btn" id="btnRefreshInv" title="Volver a cargar productos">Actualizar</button>
+        </div>
+      </header>
+
+      <main class="shell">
+        <section class="main">
+          <section class="panel" id="viewInventory">
+            <div class="toolbar">
+              <div class="toolbarRow">
+                <div class="search">
+                  <input id="invSearch" type="text" placeholder="Buscar producto" autocomplete="off" />
+                  <div class="hint">Esta pantalla es solo para stock (no vende, no cobra).</div>
+                </div>
+                <div class="filters">
+                  <label class="field">
+                    <span>Categoría</span>
+                    <select id="invCategory"></select>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid" id="invGrid"></div>
+          </section>
+        </section>
+      </main>
+
+      <div class="toast" id="toast" hidden></div>
+
+      <div class="modal" id="invModal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle" id="imTitle">Producto</div>
+          <div class="productModalBody">
+            <div class="pmThumb" id="imThumb">📦</div>
+            <div class="flex1">
+              <div class="modalText" id="imDesc"></div>
+              <div class="pmMeta">
+                <div>Stock: <span class="stock" id="imStock">0</span></div>
+                <div class="pmPrice" id="imPrice">$0,00</div>
+              </div>
+
+              <label class="field mt10">
+                <span>Categoría</span>
+                <input id="imCategory" type="text" placeholder="Ej: Bebidas" />
+              </label>
+
+              <label class="field mt10">
+                <span>Precio venta</span>
+                <input id="imPriceEdit" type="number" inputmode="decimal" placeholder="0" />
+              </label>
+
+              <div class="closeGrid mt10">
+                <label class="field">
+                  <span>Rellenar (+unidades)</span>
+                  <input id="imRestockQty" type="number" value="1" min="1" />
+                </label>
+                <button class="btn" id="imRestockBtn" type="button">Rellenar</button>
+
+                <label class="field">
+                  <span>Ajustar stock (dejar en)</span>
+                  <input id="imSetStock" type="number" min="0" placeholder="0" />
+                </label>
+                <button class="btn" id="imSetStockBtn" type="button">Guardar stock</button>
+              </div>
+
+              <div class="hint mt10" id="imHint">—</div>
+            </div>
+          </div>
+          <div class="modalActions">
+            <button class="btn" id="imClose">Cerrar</button>
+            <button class="btn" id="imSaveCatBtn" type="button">Guardar categoría</button>
+            <button class="btn" id="imSavePriceBtn" type="button">Guardar precio</button>
+            <button class="btn" id="imPickImg" type="button">Cambiar imagen</button>
+            <button class="btn ghost" id="imClearImg" type="button">Quitar imagen</button>
+          </div>
+          <div class="error" id="imError" hidden></div>
+        </div>
+      </div>
+
+      <div class="modal" id="newProdModal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle">Nuevo producto</div>
+          <div class="modalText">Crea un producto nuevo (solo desde Inventario).</div>
+
+          <label class="field mt10">
+            <span>Nombre</span>
+            <input id="npName" type="text" placeholder="Ej: Coca Cola" autocomplete="off" />
+          </label>
+
+          <label class="field mt10">
+            <span>Descripción (opcional)</span>
+            <input id="npDesc" type="text" placeholder="Ej: 500ml" autocomplete="off" />
+          </label>
+
+          <div class="closeGrid mt10">
+            <label class="field">
+              <span>Precio venta</span>
+              <input id="npPrice" type="number" inputmode="decimal" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Stock inicial</span>
+              <input id="npStock" type="number" min="0" value="0" />
+            </label>
+          </div>
+
+          <label class="field mt10">
+            <span>Categoría (opcional)</span>
+            <input id="npCategory" type="text" placeholder="Ej: Bebidas" autocomplete="off" />
+          </label>
+
+          <div class="modalActions">
+            <button class="btn" id="npCancel" type="button">Cancelar</button>
+            <button class="btn primary" id="npCreate" type="button">Crear</button>
+          </div>
+          <div class="error" id="npError" hidden></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -23,11 +23,11 @@
           <a class="tab active" id="tabStore" data-tab="store" role="tab" href="store.html">Tienda</a>
           <a class="tab" id="tabCash" data-tab="cash" role="tab" href="cash.html">Caja</a>
           <a class="tab" id="tabSummary" data-tab="summary" role="tab" href="summary.html">Resumen del día</a>
+          <a class="tab" id="tabInventory" data-tab="inventory" role="tab" href="inventory.html">Inventario</a>
         </nav>
 
         <div class="actions">
           <button class="btn ghost" id="btnTheme" title="Cambiar tema (System / Dark / Light)">Tema</button>
-          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
           <button class="btn" id="btnImport">Importar Excel</button>
           <button class="btn danger" id="btnReset">Reiniciar DB</button>
         </div>
@@ -90,11 +90,6 @@
                 <div class="pmPrice" id="pmPrice">$0,00</div>
               </div>
 
-              <label class="field mt10">
-                <span>Categoría</span>
-                <input id="pmCategory" type="text" placeholder="Ej: Bebidas" />
-              </label>
-
               <div class="pmQty">
                 <button class="btn" id="pmDec">-</button>
                 <input id="pmQty" type="number" value="1" min="1" />
@@ -104,9 +99,6 @@
           </div>
           <div class="modalActions">
             <button class="btn" id="pmCancel">Cerrar (Esc)</button>
-            <button class="btn" id="pmSaveCat">Guardar categoría</button>
-            <button class="btn" id="pmPickImg">Cambiar imagen</button>
-            <button class="btn ghost" id="pmClearImg">Quitar imagen</button>
             <button class="btn primary" id="pmAdd">Agregar</button>
           </div>
           <div class="error" id="pmError" hidden></div>

@@ -57,3 +57,26 @@ El botón **Reiniciar DB**:
 - Tamaño recomendado: 600×600 o 800×800 (cuadradas se ven mejor).
 - Formatos: `.jpg`, `.png`, `.webp`.
 - Evita fotos gigantes (más de 5–10 MB) para que cargue rápido.
+
+## 6) Modo Tablet (WiFi/LAN) — cómo se inicia
+
+Para que la tablet funcione, **la PC “servidor” debe tener el servidor iniciado**.
+
+### Opción A (recomendada): con instalador y accesos directos
+
+Cuando está instalado, deberías ver un acceso directo que se llama:
+- **Inventarios POS - Servidor Tablet**
+
+1. En la PC, haz doble clic en **Inventarios POS - Servidor Tablet**.
+2. Sale un mensaje indicando la dirección (URL) para abrir en la tablet (ej: `http://192.168.1.50:8000/`).
+3. En la tablet (en el navegador), abre esa dirección.
+
+Durante la instalación, también puede aparecer una pregunta:
+- **“¿Quieres que el Servidor Tablet se inicie automáticamente al prender Windows?”**
+
+Si eliges **Sí**, la tablet funcionará aunque nadie abra nada (solo con prender la PC).
+
+### Opción B: si el servidor ya estaba iniciado
+
+Si intentas iniciarlo y ya está funcionando, puede salir un aviso de que el puerto está ocupado.
+En ese caso **no pasa nada**: normalmente significa que **ya está corriendo**.

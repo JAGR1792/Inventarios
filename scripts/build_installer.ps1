@@ -1,7 +1,8 @@
 param(
   [string]$Name = "InstalarInventarios",
   [string]$AppExe = "dist\InventariosPOS.exe",
-  [switch]$Clean = $true
+  [string]$ServerExe = "dist\InventariosServer.exe",
+  [bool]$Clean = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,8 +35,14 @@ if (-not (Test-Path $AppExe)) {
   throw "No se encontro AppExe: $AppExe. Primero corre: .\scripts\build_exe.ps1"
 }
 
+$hasServer = Test-Path $ServerExe
+if (-not $hasServer) {
+  Write-Host "Aviso: no se encontro ServerExe: $ServerExe. (Opcional) Para modo tablet: .\scripts\build_server_exe.ps1" -ForegroundColor Yellow
+}
+
 # Bundle the app exe + icon inside the installer executable
 $addDataApp = "$AppExe;."
+$addDataServer = "$ServerExe;."
 $addDataIcon = "assets\app.ico;."
 
 $cmd = @(
@@ -47,9 +54,14 @@ $cmd = @(
   "--distpath", "dist_installer",
   "--onefile",
   "--add-data", $addDataApp,
+  $(if ($hasServer) { "--add-data" } else { $null }),
+  $(if ($hasServer) { $addDataServer } else { $null }),
   "--add-data", $addDataIcon,
   "installer.py"
 )
+
+# Remove nulls (when ServerExe not present)
+$cmd = $cmd | Where-Object { $_ -ne $null -and $_ -ne "" }
 
 if ($hasIcon) {
   $cmd += @("--icon", $iconPath)

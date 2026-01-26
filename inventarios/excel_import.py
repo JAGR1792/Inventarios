@@ -19,6 +19,23 @@ class ImportedProduct:
 
 
 class ExcelImporter:
+    # Header aliases to support multiple Excel formats.
+    # - Old format: Producto, Descripcion, unidades, Precio Final
+    # - New format: PRODUCTO, PESO, UNIDADES, PRECIO UNITARIO VENTA
+    HEADER_ALIASES: dict[str, list[str]] = {
+        "producto": ["Producto", "PRODUCTO"],
+        "descripcion": ["Descripcion", "DESCRIPCION", "PESO"],
+        "unidades": ["unidades", "UNIDADES"],
+        "precio_final": [
+            "Precio Final",
+            "PRECIO FINAL",
+            "PRECIO UNITARIO VENTA",
+            "PRECIO UNITARIO",
+            "PRECIO VENTA",
+        ],
+    }
+
+    # Used only for error messaging (preferred display names).
     REQUIRED = {
         "producto": "Producto",
         "descripcion": "Descripcion",
@@ -48,6 +65,64 @@ class ExcelImporter:
         s = unicodedata.normalize("NFKD", s)
         s = "".join(ch for ch in s if not unicodedata.combining(ch))
         return s.casefold()
+
+    @staticmethod
+    def _parse_money(value: Any) -> float:
+        if value in (None, ""):
+            return 0.0
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except Exception:
+                return 0.0
+
+        s = str(value).strip()
+        if not s:
+            return 0.0
+
+        # Remove currency text/symbols and keep digits/separators.
+        s = s.replace("$", "")
+        s = s.replace("COP", "")
+        s = s.replace("cop", "")
+        s = s.strip()
+        s = "".join(ch for ch in s if ch.isdigit() or ch in (".", ",", "-"))
+        if not s:
+            return 0.0
+
+        # Heuristics for thousands/decimal separators.
+        if "." in s and "," in s:
+            # Common LatAm: 1.234,56
+            s = s.replace(".", "")
+            s = s.replace(",", ".")
+        elif "," in s:
+            # Could be 1234,56 or 1,234
+            parts = s.split(",")
+            if len(parts) == 2 and len(parts[1]) == 2:
+                s = s.replace(",", ".")
+            else:
+                s = s.replace(",", "")
+        elif "." in s:
+            # Could be 1.234 (thousands) or 1234.56 (decimal)
+            parts = s.split(".")
+            if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit()):
+                s = s.replace(".", "")
+
+        try:
+            return float(s)
+        except Exception:
+            return 0.0
+
+    def _score_row(self, row_vals: list[Any]) -> tuple[int, dict[str, str]]:
+        present = {self._norm(v) for v in row_vals if self._norm(v)}
+        matched: dict[str, str] = {}
+        score = 0
+        for field, aliases in self.HEADER_ALIASES.items():
+            for a in aliases:
+                if self._norm(a) in present:
+                    matched[field] = a
+                    score += 1
+                    break
+        return score, matched
 
     def _price_cache_path(self) -> Path | None:
         if self.cache_dir is None:
@@ -90,8 +165,6 @@ class ExcelImporter:
         )
 
     def _find_header(self, ws, scan_rows: int = 40) -> tuple[int, dict[str, int]]:
-        required = [self._norm(v) for v in self.REQUIRED.values()]
-
         best_row = None
         best_score = -1
         best_values = None
@@ -100,8 +173,7 @@ class ExcelImporter:
         max_r = min(int(getattr(ws, "max_row", 0) or 0) or scan_rows, scan_rows)
         for r in range(1, max_r + 1):
             row_vals = list(next(ws.iter_rows(min_row=r, max_row=r, values_only=True)))
-            present = {self._norm(v) for v in row_vals if self._norm(v)}
-            score = sum(1 for req in required if req in present)
+            score, _matched = self._score_row(row_vals)
             if score > best_score:
                 best_score = score
                 best_row = r
@@ -109,8 +181,9 @@ class ExcelImporter:
 
         if best_score < 3 or best_row is None or best_values is None:
             raise RuntimeError(
-                "Could not detect header row in first rows of 'Costos'. "
-                "Ensure it contains columns Producto, Descripcion, unidades, Precio Final."
+                "Could not detect header row in the first rows. "
+                "Ensure it contains columns like: Producto/PRODUCTO, unidades/UNIDADES, "
+                "Precio Final/PRECIO UNITARIO VENTA (and optionally Descripcion/PESO)."
             )
 
         header_map = {self._norm(name): idx + 1 for idx, name in enumerate(best_values) if self._norm(name)}
@@ -130,7 +203,14 @@ class ExcelImporter:
         wb = None
         try:
             wb = excel.Workbooks.Open(str(self.xlsx_path))
-            ws = wb.Worksheets(self.worksheet_name)
+            ws = None
+            try:
+                ws = wb.Worksheets(self.worksheet_name)
+            except Exception:
+                try:
+                    ws = wb.Worksheets("INVENTARIO")
+                except Exception:
+                    ws = wb.Worksheets(1)
 
             used = ws.UsedRange
             values = used.Value
@@ -138,15 +218,12 @@ class ExcelImporter:
                 return []
 
             max_r = min(len(values), 30)
-            required = [self._norm(v) for v in self.REQUIRED.values()]
-
             best_row = None
             best_score = -1
             best_values = None
             for r in range(1, max_r + 1):
                 row_vals = list(values[r - 1])
-                present = {self._norm(v) for v in row_vals if self._norm(v)}
-                score = sum(1 for req in required if req in present)
+                score, _matched = self._score_row(row_vals)
                 if score > best_score:
                     best_score = score
                     best_row = r
@@ -157,16 +234,24 @@ class ExcelImporter:
 
             header_map = {self._norm(name): idx + 1 for idx, name in enumerate(best_values)}
 
-            def col(display: str) -> int:
-                k = self._norm(display)
-                if k not in header_map:
-                    raise RuntimeError(f"Missing required column '{display}'")
-                return header_map[k]
+            def col_any(displays: list[str]) -> tuple[int, str]:
+                for display in displays:
+                    k = self._norm(display)
+                    if k in header_map:
+                        return header_map[k], display
+                raise RuntimeError(f"Missing required column (any of): {', '.join(displays)}")
 
-            i_prod = col(self.REQUIRED["producto"])
-            i_desc = col(self.REQUIRED["descripcion"])
-            i_units = col(self.REQUIRED["unidades"])
-            i_price = col(self.REQUIRED["precio_final"])
+            i_prod, _prod_hdr = col_any(self.HEADER_ALIASES["producto"])
+            i_units, _units_hdr = col_any(self.HEADER_ALIASES["unidades"])
+            i_price, _price_hdr = col_any(self.HEADER_ALIASES["precio_final"])
+
+            # Optional
+            try:
+                i_desc, desc_hdr = col_any(self.HEADER_ALIASES["descripcion"])
+            except Exception:
+                i_desc, desc_hdr = -1, ""
+
+            desc_is_peso = self._norm(desc_hdr) == self._norm("PESO")
 
             out: list[ImportedProduct] = []
             for r in range(best_row + 1, len(values) + 1):
@@ -174,7 +259,9 @@ class ExcelImporter:
                 producto = str(row_vals[i_prod - 1] or "").strip()
                 if not producto:
                     continue
-                descripcion = str(row_vals[i_desc - 1] or "").strip()
+                descripcion = ""
+                if i_desc > 0:
+                    descripcion = str(row_vals[i_desc - 1] or "").strip()
 
                 unidades_raw = row_vals[i_units - 1]
                 try:
@@ -183,14 +270,15 @@ class ExcelImporter:
                     unidades = 0
 
                 precio_raw = row_vals[i_price - 1]
-                try:
-                    precio_final = float(precio_raw) if precio_raw not in (None, "") else 0.0
-                except (ValueError, TypeError):
-                    precio_final = 0.0
+                precio_final = self._parse_money(precio_raw)
+
+                key = producto
+                if desc_is_peso and descripcion:
+                    key = f"{producto} - {descripcion}".strip()
 
                 out.append(
                     ImportedProduct(
-                        key=producto,
+                        key=key,
                         producto=producto,
                         descripcion=descripcion,
                         unidades=unidades,
@@ -216,22 +304,56 @@ class ExcelImporter:
         cache_changed = False
 
         wb = self._open(data_only=True)
-        if self.worksheet_name not in wb.sheetnames:
-            raise RuntimeError(f"Worksheet '{self.worksheet_name}' not found")
+        # IMPORTANT: if this workbook contains both legacy sheets (e.g. Costos) and the new
+        # INVENTARIO sheet, we always prefer INVENTARIO to avoid importing the wrong format.
+        inv = next((n for n in wb.sheetnames if self._norm(n) == self._norm("INVENTARIO")), None)
+        if inv is not None:
+            ws = wb[inv]
+        elif self.worksheet_name in wb.sheetnames:
+            ws = wb[self.worksheet_name]
+        else:
+            # Fallback: auto-detect best match in any worksheet.
+            best_name = None
+            best_score = -1
+            for name in wb.sheetnames:
+                try:
+                    cand = wb[name]
+                    header_row, _header_map = self._find_header(cand)
+                    row_vals = list(
+                        next(cand.iter_rows(min_row=header_row, max_row=header_row, values_only=True))
+                    )
+                    score, _matched = self._score_row(row_vals)
+                    if score > best_score:
+                        best_score = score
+                        best_name = name
+                except Exception:
+                    continue
 
-        ws = wb[self.worksheet_name]
+            if best_name is None:
+                raise RuntimeError(
+                    f"Worksheet '{self.worksheet_name}' not found and no compatible sheet was detected"
+                )
+            ws = wb[best_name]
         header_row, header_map = self._find_header(ws)
 
-        def col(display: str) -> int:
-            k = self._norm(display)
-            if k not in header_map:
-                raise RuntimeError(f"Missing required column '{display}'")
-            return header_map[k]
+        def col_any(displays: list[str]) -> tuple[int, str]:
+            for display in displays:
+                k = self._norm(display)
+                if k in header_map:
+                    return header_map[k], display
+            raise RuntimeError(f"Missing required column (any of): {', '.join(displays)}")
 
-        i_prod = col(self.REQUIRED["producto"])
-        i_desc = col(self.REQUIRED["descripcion"])
-        i_units = col(self.REQUIRED["unidades"])
-        i_price = col(self.REQUIRED["precio_final"])
+        i_prod, _prod_hdr = col_any(self.HEADER_ALIASES["producto"])
+        i_units, _units_hdr = col_any(self.HEADER_ALIASES["unidades"])
+        i_price, _price_hdr = col_any(self.HEADER_ALIASES["precio_final"])
+
+        # Optional
+        try:
+            i_desc, desc_hdr = col_any(self.HEADER_ALIASES["descripcion"])
+        except Exception:
+            i_desc, desc_hdr = -1, ""
+
+        desc_is_peso = self._norm(desc_hdr) == self._norm("PESO")
 
         out: list[ImportedProduct] = []
         empty_streak = 0
@@ -252,7 +374,9 @@ class ExcelImporter:
 
             empty_streak = 0
 
-            descripcion = str(at(i_desc) or "").strip()
+            descripcion = ""
+            if i_desc > 0:
+                descripcion = str(at(i_desc) or "").strip()
 
             unidades_raw = at(i_units)
             try:
@@ -261,21 +385,22 @@ class ExcelImporter:
                 unidades = 0
 
             precio_raw = at(i_price)
-            try:
-                precio_final = float(precio_raw) if precio_raw not in (None, "") else 0.0
-            except (ValueError, TypeError):
-                precio_final = 0.0
+            precio_final = self._parse_money(precio_raw)
 
-            if precio_final == 0.0 and cache.get(producto, 0) > 0:
-                precio_final = float(cache[producto])
+            key = producto
+            if desc_is_peso and descripcion:
+                key = f"{producto} - {descripcion}".strip()
+
+            if precio_final == 0.0 and cache.get(key, 0) > 0:
+                precio_final = float(cache[key])
             elif precio_final > 0:
-                if cache.get(producto) != precio_final:
-                    cache[producto] = float(precio_final)
+                if cache.get(key) != precio_final:
+                    cache[key] = float(precio_final)
                     cache_changed = True
 
             out.append(
                 ImportedProduct(
-                    key=producto,
+                    key=key,
                     producto=producto,
                     descripcion=descripcion,
                     unidades=unidades,

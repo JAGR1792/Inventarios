@@ -23,6 +23,7 @@
           <a class="tab" id="tabStore" data-tab="store" role="tab" href="store.html">Tienda</a>
           <a class="tab active" id="tabCash" data-tab="cash" role="tab" href="cash.html">Caja</a>
           <a class="tab" id="tabSummary" data-tab="summary" role="tab" href="summary.html">Resumen del día</a>
+          <a class="tab" id="tabInventory" data-tab="inventory" role="tab" href="inventory.html">Inventario</a>
         </nav>
 
         <div class="actions">
@@ -61,12 +62,11 @@
                     <input id="cashDay" type="date" disabled title="Se toma de la hora del computador" />
                   </label>
                   <label class="field">
-                    <span>Efectivo al iniciar (ajuste opcional)</span>
-                    <input id="openingCash" type="number" inputmode="decimal" placeholder="Sugerido" />
+                    <span>Efectivo al iniciar</span>
+                    <input id="openingCash" type="number" inputmode="decimal" disabled />
                   </label>
                   <div class="rowBtns span2">
-                    <button class="btn" id="btnSaveOpening" title="Solo si necesitas corregir el efectivo inicial">Guardar apertura</button>
-                    <button class="btn" id="btnUseSuggested" title="Volver al valor sugerido (de ayer)">Usar sugerido</button>
+                    <button class="btn" id="btnSetInitialOpening" title="Solo la primera vez">Ingresar monto inicial</button>
                     <button class="btn" id="btnRefreshCash">Actualizar</button>
                   </div>
                 </div>
@@ -75,7 +75,7 @@
 
                 <div class="closeTotals">
                   <div><span>Debería haber en caja (hoy)</span><b id="cashExpected">$0,00</b></div>
-                  <div><span>Inicio sugerido (ayer)</span><b id="cashOpeningSuggested">$0,00</b></div>
+                  <div><span>Nota</span><b id="cashOpeningSuggested">—</b></div>
                 </div>
               </div>
 
@@ -133,10 +133,6 @@
               <span>Efectivo contado (opcional)</span>
               <input id="cashCounted" type="number" inputmode="decimal" placeholder="0" />
             </label>
-            <label class="field">
-              <span>Dejar para mañana</span>
-              <input id="carryNext" type="number" inputmode="decimal" placeholder="0" />
-            </label>
             <label class="field span2">
               <span>Notas (opcional)</span>
               <input id="cashNotes" type="text" placeholder="Ej: turno mañana" />
@@ -145,7 +141,8 @@
 
           <div class="modalActions">
             <button class="btn" id="btnCloseModalCancel">Cancelar (Esc)</button>
-            <button class="btn primary" id="btnCloseDay">Guardar cierre</button>
+            <button class="btn" id="btnCloseDayForce" hidden>Cerrar caja de todas maneras</button>
+            <button class="btn primary" id="btnCloseDay">Cerrar caja</button>
           </div>
 
           <div class="error" id="cashCloseError" hidden></div>

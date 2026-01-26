@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.sqlite import insert
 
 from inventarios.excel_import import ImportedProduct
-from inventarios.models import Product, ProductImage, Sale, SaleLine
+from inventarios.models import Product, ProductImage, Sale, SaleLine, StockMove
 
 
 @dataclass(frozen=True)
@@ -128,8 +128,136 @@ class ProductRepo:
         if row is None:
             return False
         row.category = (category or "").strip()
+
+    def adjust_stock(self, product_key: str, *, delta: int, kind: str = "restock", notes: str | None = None) -> int:
+        k = (product_key or "").strip()
+        if not k:
+            raise RuntimeError("Producto inválido")
+
+        row = self.session.execute(select(Product).where(Product.key == k)).scalar_one_or_none()
+        if row is None:
+            raise RuntimeError("Producto no encontrado")
+
+        d = int(delta or 0)
+        new_stock = int(row.unidades) + d
+        if new_stock < 0:
+            new_stock = 0
+            # reflect actual applied delta
+            d = int(new_stock) - int(row.unidades)
+
+        row.unidades = int(new_stock)
+        row.updated_at = datetime.utcnow()
+
+        self.session.add(
+            StockMove(
+                product_key=row.key,
+                kind=(kind or "restock").strip().lower() or "restock",
+                delta=int(d),
+                stock_after=int(new_stock),
+                notes=(notes or "").strip() or None,
+            )
+        )
+        return int(new_stock)
+
+    def set_stock(self, product_key: str, *, stock: int, notes: str | None = None) -> int:
+        k = (product_key or "").strip()
+        if not k:
+            raise RuntimeError("Producto inválido")
+
+        row = self.session.execute(select(Product).where(Product.key == k)).scalar_one_or_none()
+        if row is None:
+            raise RuntimeError("Producto no encontrado")
+
+        new_stock = max(0, int(stock or 0))
+        d = int(new_stock) - int(row.unidades)
+        row.unidades = int(new_stock)
+        row.updated_at = datetime.utcnow()
+
+        self.session.add(
+            StockMove(
+                product_key=row.key,
+                kind="adjust",
+                delta=int(d),
+                stock_after=int(new_stock),
+                notes=(notes or "").strip() or None,
+            )
+        )
+        return int(new_stock)
         row.updated_at = datetime.utcnow()
         return True
+
+    def create_product(
+        self,
+        *,
+        producto: str,
+        descripcion: str = "",
+        unidades: int = 0,
+        precio_final: Decimal = Decimal("0.00"),
+        category: str = "",
+    ) -> Product:
+        name = (producto or "").strip()
+        if not name:
+            raise RuntimeError("Nombre de producto inválido")
+
+        desc = (descripcion or "").strip()
+        cat = (category or "").strip()
+        try:
+            price = Decimal(str(precio_final or 0)).quantize(Decimal("0.01"))
+        except Exception:
+            raise RuntimeError("Precio inválido")
+        if price < 0:
+            raise RuntimeError("Precio inválido")
+
+        try:
+            stock = max(0, int(unidades or 0))
+        except Exception:
+            stock = 0
+
+        base = name if not desc else f"{name} - {desc}"
+        base = " ".join(base.split()).strip()
+        if not base:
+            base = name
+        base = base[:240]
+
+        # Ensure unique key.
+        key = base
+        n = 2
+        while self.session.execute(select(Product).where(Product.key == key)).scalar_one_or_none() is not None:
+            suffix = f" - {n}"
+            key = (base[: (255 - len(suffix))] + suffix).strip()
+            n += 1
+
+        row = Product(
+            key=key,
+            producto=name,
+            descripcion=desc,
+            unidades=int(stock),
+            precio_final=price,
+            category=cat,
+            updated_at=datetime.utcnow(),
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def set_price(self, product_key: str, *, precio_final: Decimal) -> Decimal:
+        k = (product_key or "").strip()
+        if not k:
+            raise RuntimeError("Producto inválido")
+        try:
+            price = Decimal(str(precio_final or 0)).quantize(Decimal("0.01"))
+        except Exception:
+            raise RuntimeError("Precio inválido")
+        if price < 0:
+            raise RuntimeError("Precio inválido")
+
+        row = self.session.execute(select(Product).where(Product.key == k)).scalar_one_or_none()
+        if row is None:
+            raise RuntimeError("Producto no encontrado")
+
+        row.precio_final = price
+        row.updated_at = datetime.utcnow()
+        return price
 
     def get_by_keys(self, keys: list[str]) -> dict[str, Product]:
         if not keys:

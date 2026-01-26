@@ -946,31 +946,24 @@ async function refreshCashPanel() {
   const openingInput = document.getElementById('openingCash')
   const openingHint = document.getElementById('openingHint')
   const openingSuggestedEl = document.getElementById('cashOpeningSuggested')
-  const btnUseSuggested = document.getElementById('btnUseSuggested')
+  const btnSetInitial = document.getElementById('btnSetInitialOpening')
 
   const openingCash = Number(res.opening_cash || 0)
-  const suggested = Number(res.suggested_opening_cash || 0)
-  const isManual = Number(res.opening_cash_manual || 0) === 1
+  const openingSource = String(res.opening_source || '')
+  const needsInitial = Boolean(res.needs_initial_opening)
 
-  if (openingSuggestedEl) openingSuggestedEl.textContent = `$${fmtMoney(suggested)}`
-  if (openingInput) {
-    if (isManual) {
-      openingInput.value = String(openingCash)
-      openingInput.placeholder = ''
-    } else {
-      openingInput.value = ''
-      openingInput.placeholder = suggested ? String(suggested) : 'Sugerido'
-    }
+  if (openingInput) openingInput.value = String(openingCash)
+  if (btnSetInitial) btnSetInitial.hidden = !needsInitial
+  if (openingSuggestedEl) {
+    const note = needsInitial
+      ? 'Primera vez: ingresa monto inicial.'
+      : (openingSource === 'prev_close' ? 'Automático (de ayer)' : 'Inicial')
+    openingSuggestedEl.textContent = note
   }
-  if (btnUseSuggested) btnUseSuggested.disabled = !isManual
   if (openingHint) {
-    if (!isManual && suggested === 0) {
-      openingHint.textContent = 'Primera vez: escribe cuánto efectivo hay en caja para iniciar.'
-    } else if (!isManual) {
-      openingHint.textContent = 'Inicio automático (de ayer). Si necesitas corregir, guarda apertura.'
-    } else {
-      openingHint.textContent = 'Inicio manual (ajustado por ti). Puedes volver a sugerido.'
-    }
+    openingHint.textContent = needsInitial
+      ? 'Primera vez: pulsa “Ingresar monto inicial”. Luego el sistema arrastra la apertura automáticamente.'
+      : 'La apertura se toma automáticamente del cierre anterior.'
   }
 
   document.getElementById('cashGross').textContent = `$${fmtMoney(res.gross_total || 0)}`
@@ -987,10 +980,8 @@ async function refreshCashPanel() {
     lc.textContent = res.last_close?.created_at ? String(res.last_close.created_at) : '—'
   }
 
-  const carryEl = document.getElementById('carryNext')
-  if (carryEl && (carryEl.value || '').trim() === '') {
-    carryEl.value = String(res.expected_cash_end || 0)
-  }
+  const forceBtn = document.getElementById('btnCloseDayForce')
+  if (forceBtn) forceBtn.hidden = true
 
   const list = document.getElementById('withdrawList')
   if (list) {
@@ -1017,42 +1008,25 @@ async function refreshCashPanel() {
   }
 }
 
-async function useSuggestedOpeningCash() {
-  const dayEl = document.getElementById('cashDay')
-  if (!dayEl) return
+async function setInitialOpeningCash() {
   const day = todayIso()
-  try {
-    const res = await state.backend.useSuggestedOpeningCash(day)
-    if (!res || !res.ok) {
-      toast(res?.error || 'No se pudo usar sugerido')
-      return
-    }
-  } catch (e) {
-    return
-  }
-  refreshCashPanel()
-}
-
-async function saveOpeningCash() {
-  const day = todayIso()
-  const v = (document.getElementById('openingCash')?.value || '').trim()
+  const v = prompt('Monto inicial en caja (solo la primera vez):', '0')
   const err = document.getElementById('cashError')
   const ok = document.getElementById('cashOk')
   if (err) err.hidden = true
   if (ok) ok.hidden = true
 
-  if (!v) {
-    if (err) { err.hidden = false; err.textContent = 'Escribe el efectivo inicial para guardar (solo si vas a ajustar).' }
-    return
-  }
+  if (v == null) return
+  const vv = String(v || '').trim()
+  if (!vv) return
 
-  const res = await state.backend.setOpeningCash(day, v ? Number(v) : 0)
+  const res = await state.backend.setOpeningCash(day, Number(vv))
   if (!res || !res.ok) {
     if (err) { err.hidden = false; err.textContent = res?.error || 'No se pudo guardar apertura' }
     return
   }
-  if (ok) { ok.hidden = false; ok.textContent = 'Apertura guardada' }
-  toast('Apertura guardada')
+  if (ok) { ok.hidden = false; ok.textContent = 'Monto inicial guardado' }
+  toast('Monto inicial guardado')
   refreshCashPanel()
 }
 
@@ -1085,25 +1059,30 @@ async function deleteWithdrawal(id) {
   refreshCashPanel()
 }
 
-async function closeCashDay() {
+async function closeCashDay(force = false) {
   const day = document.getElementById('cashDay').value || todayIso()
   const counted = (document.getElementById('cashCounted').value || '').trim()
-  const carry = (document.getElementById('carryNext').value || '').trim()
   const notes = (document.getElementById('cashNotes').value || '').trim()
   const err = document.getElementById('cashCloseError') || document.getElementById('cashError')
   const ok = document.getElementById('cashCloseOk') || document.getElementById('cashOk')
   if (err) err.hidden = true
   if (ok) ok.hidden = true
 
-  const res = await state.backend.closeCashDay(day, counted ? Number(counted) : null, carry ? Number(carry) : null, notes)
+  const res = await state.backend.closeCashDay(day, counted ? Number(counted) : null, notes, Boolean(force))
   if (!res || !res.ok) {
+    // Mismatch flow: show warning and enable force button.
+    const forceBtn = document.getElementById('btnCloseDayForce')
+    if (res?.needs_force && forceBtn) {
+      forceBtn.hidden = false
+      forceBtn.onclick = () => closeCashDay(true)
+    }
     if (err) { err.hidden = false; err.textContent = res?.error || 'No se pudo guardar cierre' }
     return
   }
 
   if (ok) {
     ok.hidden = false
-    ok.textContent = `Cierre guardado (${res.created_at || ''})` + (res.cash_diff != null ? ` • Dif $${fmtMoney(res.cash_diff)}` : '')
+    ok.textContent = (res.message ? String(res.message) + ' ' : '') + `Cierre guardado (${res.created_at || ''})` + (res.cash_diff != null ? ` • Dif $${fmtMoney(res.cash_diff)}` : '')
   }
   toast('Cierre guardado')
   refreshCashPanel()
@@ -1130,7 +1109,8 @@ function openProductModal(key) {
   stockEl.className = `stock ${stockClass}`
 
   document.getElementById('pmPrice').textContent = `$${fmtMoney(p.precio_final || 0)}`
-  document.getElementById('pmCategory').value = String(p.category || '')
+  const catEl = document.getElementById('pmCategory')
+  if (catEl) catEl.value = String(p.category || '')
   document.getElementById('pmQty').value = '1'
 
   const thumb = document.getElementById('pmThumb')
@@ -1469,15 +1449,15 @@ function setupHandlers() {
     })
   }
   const btnRefreshCash = document.getElementById('btnRefreshCash')
-  const btnSaveOpening = document.getElementById('btnSaveOpening')
-  const btnUseSuggested = document.getElementById('btnUseSuggested')
+  const btnSetInitialOpening = document.getElementById('btnSetInitialOpening')
   const btnAddWithdraw = document.getElementById('btnAddWithdraw')
   const btnCloseDay = document.getElementById('btnCloseDay')
+  const btnCloseDayForce = document.getElementById('btnCloseDayForce')
   if (btnRefreshCash) btnRefreshCash.addEventListener('click', refreshCashPanel)
-  if (btnSaveOpening) btnSaveOpening.addEventListener('click', saveOpeningCash)
-  if (btnUseSuggested) btnUseSuggested.addEventListener('click', useSuggestedOpeningCash)
+  if (btnSetInitialOpening) btnSetInitialOpening.addEventListener('click', setInitialOpeningCash)
   if (btnAddWithdraw) btnAddWithdraw.addEventListener('click', addWithdrawal)
-  if (btnCloseDay) btnCloseDay.addEventListener('click', closeCashDay)
+  if (btnCloseDay) btnCloseDay.addEventListener('click', () => closeCashDay(false))
+  if (btnCloseDayForce) btnCloseDayForce.addEventListener('click', () => closeCashDay(true))
   const withdrawList = document.getElementById('withdrawList')
   if (withdrawList) withdrawList.addEventListener('click', (e) => {
     const btn = e.target?.closest?.('button[data-del]')
@@ -1608,10 +1588,12 @@ function createHttpBackend(baseUrl) {
     setOpeningCash: (day, opening_cash) => httpJson('POST', '/api/setOpeningCash', { day, opening_cash }),
     addCashWithdrawal: (day, amount, notes) => httpJson('POST', '/api/addCashWithdrawal', { day, amount, notes }),
     deleteCashMove: (id) => httpJson('POST', '/api/deleteCashMove', { id }),
-    closeCashDay: (day, cash_counted, carry_to_next_day, notes) => httpJson('POST', '/api/closeCashDay', { day, cash_counted, carry_to_next_day, notes }),
+    closeCashDay: (day, cash_counted, notes, force) => httpJson('POST', '/api/closeCashDay', { day, cash_counted, notes, force }),
 
     setProductCategory: (key, category) => httpJson('POST', '/api/setProductCategory', { key, category }),
     clearProductImage: (key) => httpJson('POST', '/api/clearProductImage', { key }),
+    restockProduct: (key, delta, notes) => httpJson('POST', '/api/restockProduct', { key, delta, notes }),
+    setProductStock: (key, stock, notes) => httpJson('POST', '/api/setProductStock', { key, stock, notes }),
     resetDatabase: (confirm_text) => httpJson('POST', '/api/resetDatabase', { confirm_text }),
     openImagesFolder: () => httpJson('POST', '/api/openImagesFolder'),
 

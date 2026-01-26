@@ -154,6 +154,7 @@ def create_app(session_factory, settings: Settings) -> Flask:
                 data.get("cash_counted"),
                 data.get("carry_to_next_day"),
                 data.get("notes", ""),
+                bool(data.get("force")),
             )
         )
 
@@ -166,6 +167,34 @@ def create_app(session_factory, settings: Settings) -> Flask:
     def api_clear_product_image():
         data = request.get_json(silent=True) or {}
         return _ok(backend.clearProductImage(data.get("key")))
+
+    @app.post("/api/restockProduct")
+    def api_restock_product():
+        data = request.get_json(silent=True) or {}
+        return _ok(backend.restockProduct(data.get("key"), data.get("delta"), data.get("notes", "")))
+
+    @app.post("/api/setProductStock")
+    def api_set_product_stock():
+        data = request.get_json(silent=True) or {}
+        return _ok(backend.setProductStock(data.get("key"), data.get("stock"), data.get("notes", "")))
+
+    @app.post("/api/setProductPrice")
+    def api_set_product_price():
+        data = request.get_json(silent=True) or {}
+        return _ok(backend.setProductPrice(data.get("key"), data.get("precio_final")))
+
+    @app.post("/api/createProduct")
+    def api_create_product():
+        data = request.get_json(silent=True) or {}
+        return _ok(
+            backend.createProduct(
+                data.get("producto"),
+                data.get("descripcion", ""),
+                data.get("precio_final"),
+                data.get("unidades", 0),
+                data.get("category", ""),
+            )
+        )
 
     @app.post("/api/resetDatabase")
     def api_reset_db():

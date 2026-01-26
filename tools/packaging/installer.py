@@ -21,6 +21,9 @@ APP_DISPLAY_NAME = "Inventarios POS"
 INSTALL_DIR_NAME = "Inventarios_POS"
 ICON_FILE_NAME = "app.ico"
 
+SERVER_DISPLAY_NAME = "Inventarios POS - Servidor Tablet"
+SERVER_EXE_CANONICAL_NAME = "InventariosServer.exe"
+
 # Current build name is InventariosPOS.exe (per README/scripts). Keep legacy names for compatibility.
 APP_EXE_CANONICAL_NAME = "InventariosPOS.exe"
 APP_EXE_CANDIDATES = [
@@ -32,6 +35,12 @@ APP_EXE_CANDIDATES = [
 # Defaults for build outputs
 APP_BUILD_NAME = "InventariosPOS"
 INSTALLER_BUILD_NAME = "InstalarInventarios"
+SERVER_BUILD_NAME = "InventariosServer"
+
+SERVER_EXE_CANDIDATES = [
+    SERVER_EXE_CANONICAL_NAME,
+    "Inventarios Server.exe",
+]
 
 
 def _msgbox(text: str, title: str, flags: int = 0) -> int:
@@ -104,6 +113,24 @@ def _find_source_app_exe() -> Path:
         + ", ".join(APP_EXE_CANDIDATES)
         + "\n\nTip: primero construye el EXE (PyInstaller) antes del instalador."
     )
+
+
+def _find_source_server_exe() -> Path | None:
+    # Optional: older installers may not bundle the server EXE.
+    root = _bundle_root()
+
+    candidates: list[Path] = []
+    for exe_name in SERVER_EXE_CANDIDATES:
+        candidates += [
+            root / exe_name,
+            root / "dist" / exe_name,
+            root / "dist" / SERVER_BUILD_NAME / exe_name,
+        ]
+
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
 
 
 def _find_source_icon() -> Path | None:
@@ -198,11 +225,46 @@ def _startmenu_shortcut_path() -> Path:
     return (Path(base) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / f"{APP_DISPLAY_NAME}.lnk").resolve()
 
 
-def _install_from_exe(source_exe: Path, install_dir: Path, *, launch: bool | None = None) -> None:
+def _startup_shortcut_path(name: str) -> Path:
+    # Per-user Startup folder (CSIDL_STARTUP = 0x7)
+    startup = _get_folder_path_csidl(0x7)
+    if startup:
+        return (startup / f"{name}.lnk").resolve()
+    base = os.environ.get("APPDATA")
+    if not base:
+        return Path("")
+    return (
+        Path(base)
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+        / "Startup"
+        / f"{name}.lnk"
+    ).resolve()
+
+
+def _install_from_exe(
+    source_exe: Path,
+    install_dir: Path,
+    *,
+    launch: bool | None = None,
+    server_source_exe: Path | None = None,
+) -> None:
     _ensure_dir(install_dir)
 
     dst_exe = (install_dir / APP_EXE_CANONICAL_NAME).resolve()
     shutil.copy2(source_exe, dst_exe)
+
+    # Optional tablet server exe
+    server_src = server_source_exe or _find_source_server_exe()
+    server_dst = None
+    if server_src and server_src.exists():
+        server_dst = (install_dir / SERVER_EXE_CANONICAL_NAME).resolve()
+        try:
+            shutil.copy2(server_src, server_dst)
+        except Exception:
+            server_dst = None
 
     src_icon = _find_source_icon()
     dst_icon = None
@@ -215,19 +277,53 @@ def _install_from_exe(source_exe: Path, install_dir: Path, *, launch: bool | Non
 
     # Shortcuts
     shortcut_errors: list[str] = []
+    desktop = _desktop_shortcut_path()
+    start = _startmenu_shortcut_path()
+
     try:
-        desktop = _desktop_shortcut_path()
         _create_shortcut_windows(desktop, dst_exe, install_dir, dst_icon)
     except Exception:
         shortcut_errors.append("Escritorio")
 
     try:
-        start = _startmenu_shortcut_path()
         if str(start):
             _ensure_dir(start.parent)
             _create_shortcut_windows(start, dst_exe, install_dir, dst_icon)
     except Exception:
         shortcut_errors.append("Menú Inicio")
+
+    # Tablet server shortcuts (if bundled)
+    if server_dst and server_dst.exists():
+        try:
+            desktop_server = desktop.parent / f"{SERVER_DISPLAY_NAME}.lnk"
+            _create_shortcut_windows(desktop_server, server_dst, install_dir, dst_icon)
+        except Exception:
+            shortcut_errors.append("Escritorio (Servidor Tablet)")
+
+        try:
+            if str(start):
+                start_server = start.parent / f"{SERVER_DISPLAY_NAME}.lnk"
+                _ensure_dir(start_server.parent)
+                _create_shortcut_windows(start_server, server_dst, install_dir, dst_icon)
+        except Exception:
+            shortcut_errors.append("Menú Inicio (Servidor Tablet)")
+
+        # Offer auto-start on login (Startup folder)
+        try:
+            res = _msgbox(
+                "¿Quieres que el Servidor Tablet se inicie automáticamente al prender Windows?\n\n"
+                "Recomendado si usas tablets por WiFi/LAN.",
+                SERVER_DISPLAY_NAME,
+                0x40 | 0x4,  # MB_ICONINFORMATION | MB_YESNO
+            )
+            if res == 6:  # IDYES
+                startup = _startup_shortcut_path(SERVER_DISPLAY_NAME)
+                if str(startup):
+                    _ensure_dir(startup.parent)
+                    _create_shortcut_windows(startup, server_dst, install_dir, dst_icon)
+        except Exception:
+            # Non-fatal
+            pass
 
     if shortcut_errors:
         _msgbox(
@@ -326,7 +422,51 @@ def _build_app_exe(py: Path, repo_root: Path, *, onefile: bool) -> Path:
     raise FileNotFoundError("PyInstaller terminó pero no encontré el EXE en dist/<name>/")
 
 
-def _build_installer_exe(py: Path, repo_root: Path, app_exe: Path) -> Path:
+def _build_server_exe(py: Path, repo_root: Path, *, onefile: bool) -> Path:
+    icon = (repo_root / "assets" / ICON_FILE_NAME).resolve()
+    has_icon = icon.exists()
+
+    add_data_web = "inventarios\\ui\\web;inventarios\\ui\\web"
+    add_data_assets = "assets;assets"
+    mode_args = ["--onefile"] if onefile else ["--onedir"]
+
+    cmd = [
+        str(py),
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--windowed",
+        "--name",
+        SERVER_BUILD_NAME,
+        "--add-data",
+        add_data_web,
+        "--add-data",
+        add_data_assets,
+    ] + mode_args
+
+    if has_icon:
+        cmd += ["--icon", str(icon)]
+
+    cmd += ["run_server.py"]
+    _run(cmd, cwd=repo_root)
+
+    if onefile:
+        exe = (repo_root / "dist" / f"{SERVER_BUILD_NAME}.exe").resolve()
+        if exe.exists():
+            return exe
+        for candidate in (repo_root / "dist").glob("*.exe"):
+            if candidate.name.lower().startswith(SERVER_BUILD_NAME.lower()):
+                return candidate.resolve()
+        raise FileNotFoundError("PyInstaller (server) terminó pero no encontré el EXE en dist/")
+
+    exe = (repo_root / "dist" / SERVER_BUILD_NAME / f"{SERVER_BUILD_NAME}.exe").resolve()
+    if exe.exists():
+        return exe
+    raise FileNotFoundError("PyInstaller (server) terminó pero no encontré el EXE en dist/<name>/")
+
+
+def _build_installer_exe(py: Path, repo_root: Path, app_exe: Path, server_exe: Path | None = None) -> Path:
     if not app_exe.exists():
         raise FileNotFoundError(f"No se encontró AppExe: {app_exe}")
 
@@ -349,6 +489,9 @@ def _build_installer_exe(py: Path, repo_root: Path, app_exe: Path) -> Path:
         "--add-data",
         add_data_app,
     ]
+
+    if server_exe and server_exe.exists():
+        cmd += ["--add-data", f"{server_exe};."]
 
     # Bundle icon if present (both as installer icon and as data for shortcut icon)
     if has_icon:
@@ -439,9 +582,11 @@ def _bootstrap_cli(argv: list[str]) -> int:
 
     # Build
     built_app_exe: Path | None = None
+    built_server_exe: Path | None = None
     if not args.no_build:
         built_app_exe = _build_app_exe(py, repo_root, onefile=not args.onedir)
-        _build_installer_exe(py, repo_root, built_app_exe)
+        built_server_exe = _build_server_exe(py, repo_root, onefile=not args.onedir)
+        _build_installer_exe(py, repo_root, built_app_exe, built_server_exe)
 
     # Install (copy EXE + shortcuts)
     installed_exe: Path | None = None
@@ -455,7 +600,12 @@ def _bootstrap_cli(argv: list[str]) -> int:
             source_exe = (repo_root / "dist" / f"{APP_BUILD_NAME}.exe").resolve()
 
         install_dir = Path(args.install_dir).expanduser().resolve() if args.install_dir else _default_install_dir()
-        _install_from_exe(source_exe, install_dir, launch=True if args.run else None)
+        server_source = built_server_exe
+        if server_source is None:
+            server_source = (repo_root / "dist" / f"{SERVER_BUILD_NAME}.exe").resolve()
+            if not server_source.exists():
+                server_source = None
+        _install_from_exe(source_exe, install_dir, launch=True if args.run else None, server_source_exe=server_source)
         installed_exe = (install_dir / APP_EXE_CANONICAL_NAME).resolve()
 
     # Run without install: launch built EXE if available.

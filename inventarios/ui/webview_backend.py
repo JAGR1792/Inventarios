@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -189,6 +189,63 @@ class WebviewBackend:
             ok = repo.set_category(key, category)
         return {"ok": bool(ok)}
 
+    def restockProduct(self, key: str, delta: int, notes: str = ""):
+        """Add inventory units to a product (delta can be positive; negative will reduce but not below 0)."""
+        try:
+            d = int(delta or 0)
+        except Exception:
+            d = 0
+        if d == 0:
+            return {"ok": False, "error": "Cantidad inválida"}
+
+        with session_scope(self._session_factory) as session:
+            repo = ProductRepo(session)
+            try:
+                new_stock = repo.adjust_stock(key, delta=d, kind="restock", notes=notes)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+
+        return {"ok": True, "unidades": int(new_stock)}
+
+    def setProductStock(self, key: str, stock: int, notes: str = ""):
+        try:
+            s = int(stock or 0)
+        except Exception:
+            s = 0
+
+        with session_scope(self._session_factory) as session:
+            repo = ProductRepo(session)
+            try:
+                new_stock = repo.set_stock(key, stock=s, notes=notes)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+
+        return {"ok": True, "unidades": int(new_stock)}
+
+    def setProductPrice(self, key: str, precio_final):
+        with session_scope(self._session_factory) as session:
+            repo = ProductRepo(session)
+            try:
+                price = repo.set_price(key, precio_final=Decimal(str(precio_final or 0)))
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        return {"ok": True, "precio_final": float(price)}
+
+    def createProduct(self, producto: str, descripcion: str = "", precio_final=None, unidades: int = 0, category: str = ""):
+        with session_scope(self._session_factory) as session:
+            repo = ProductRepo(session)
+            try:
+                row = repo.create_product(
+                    producto=producto,
+                    descripcion=descripcion,
+                    unidades=int(unidades or 0),
+                    precio_final=Decimal(str(precio_final or 0)),
+                    category=category,
+                )
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        return {"ok": True, "key": row.key}
+
     def checkout(self, lines, payment=None):
         cart: dict[str, int] = {}
         for ln in (lines or []):
@@ -230,41 +287,58 @@ class WebviewBackend:
 
     def _ensure_cash_day(self, session, day: str) -> CashDay:
         row = session.get(CashDay, day)
-        if row is not None:
-            return row
-
-        opening = Decimal("0.00")
-        prev = (
-            session.query(CashClose)
-            .filter(CashClose.day < day)
-            .order_by(CashClose.day.desc(), CashClose.created_at.desc())
-            .first()
-        )
-        if prev is not None:
-            try:
-                opening = Decimal(str(prev.carry_to_next_day or 0)).quantize(Decimal("0.01"))
-            except Exception:
-                opening = Decimal("0.00")
-
-        row = CashDay(day=day, opening_cash=opening, opening_cash_manual=0)
-        session.add(row)
-        session.flush()
+        if row is None:
+            row = CashDay(day=day, opening_cash=Decimal("0.00"), opening_cash_manual=0)
+            session.add(row)
+            session.flush()
         return row
 
-    def _suggest_opening_cash(self, session, day: str) -> Decimal:
-        opening = Decimal("0.00")
-        prev = (
+    def _get_prev_close(self, session, day: str) -> CashClose | None:
+        return (
             session.query(CashClose)
             .filter(CashClose.day < day)
             .order_by(CashClose.day.desc(), CashClose.created_at.desc())
             .first()
         )
-        if prev is None:
-            return opening
-        try:
-            return Decimal(str(prev.carry_to_next_day or 0)).quantize(Decimal("0.01"))
-        except Exception:
-            return Decimal("0.00")
+
+    def _get_opening_cash(self, session, day: str) -> tuple[Decimal, str, bool]:
+        """Returns (opening_cash, source, needs_initial_opening).
+
+        source:
+          - "prev_close": derived from previous day's close
+          - "initial": one-time initial cash set by user
+          - "zero": default 0 when system has no prior data
+        """
+        day_row = self._ensure_cash_day(session, day)
+        prev = self._get_prev_close(session, day)
+        if prev is not None:
+            opening = Decimal(str(prev.carry_to_next_day or 0)).quantize(Decimal("0.01"))
+            # Enforce rule: opening is derived from previous close.
+            try:
+                if Decimal(str(day_row.opening_cash or 0)).quantize(Decimal("0.01")) != opening or int(
+                    getattr(day_row, "opening_cash_manual", 0) or 0
+                ) != 0:
+                    day_row.opening_cash = opening
+                    day_row.opening_cash_manual = 0
+                    day_row.updated_at = datetime.utcnow()
+            except Exception:
+                pass
+            return opening, "prev_close", False
+
+        # No previous close: allow one-time initial opening.
+        opening = Decimal(str(day_row.opening_cash or 0)).quantize(Decimal("0.01"))
+        is_initial = int(getattr(day_row, "opening_cash_manual", 0) or 0) == 1
+        if is_initial:
+            return opening, "initial", False
+        # No initial set.
+        any_close = session.query(CashClose.id).limit(1).first() is not None
+        # If there are closes but none before this day, treat as prev_close scenario in past dates.
+        # For simplicity: still requires opening unless user closes days in order.
+        return Decimal("0.00"), "zero", not any_close
+
+    def _next_day(self, day: str) -> str:
+        d = datetime.strptime(day, "%Y-%m-%d")
+        return (d + timedelta(days=1)).strftime("%Y-%m-%d")
 
     def getCashPanel(self, day_iso: str):
         day = (day_iso or "").strip()
@@ -273,16 +347,7 @@ class WebviewBackend:
 
         with session_scope(self._session_factory) as session:
             day_row = self._ensure_cash_day(session, day)
-            suggested_opening = self._suggest_opening_cash(session, day)
-
-            try:
-                if int(getattr(day_row, "opening_cash_manual", 0) or 0) == 0:
-                    current_opening = Decimal(str(day_row.opening_cash or 0)).quantize(Decimal("0.01"))
-                    if current_opening != suggested_opening:
-                        day_row.opening_cash = suggested_opening
-                        day_row.updated_at = datetime.utcnow()
-            except Exception:
-                pass
+            opening_cash, opening_source, needs_initial_opening = self._get_opening_cash(session, day)
 
             sales = SalesRepo(session)
             t = sales.totals_for_day(day)
@@ -298,16 +363,12 @@ class WebviewBackend:
                 Decimal("0.01")
             )
 
-            expected_cash_end = (
-                Decimal(str(day_row.opening_cash or 0)) + Decimal(str(t["cash_total"] or 0)) - withdrawals_total
-            ).quantize(Decimal("0.01"))
-
-            last_close = (
-                session.query(CashClose)
-                .filter(CashClose.day == day)
-                .order_by(CashClose.created_at.desc())
-                .first()
+            expected_cash_end = (opening_cash + Decimal(str(t["cash_total"] or 0)) - withdrawals_total).quantize(
+                Decimal("0.01")
             )
+
+            last_close = session.query(CashClose).filter(CashClose.day == day).order_by(CashClose.created_at.desc()).first()
+            is_closed = last_close is not None
 
             out_moves = []
             for m in moves:
@@ -332,9 +393,10 @@ class WebviewBackend:
             return {
                 "ok": True,
                 "day": day,
-                "opening_cash": float(Decimal(str(day_row.opening_cash or 0)).quantize(Decimal("0.01"))),
-                "opening_cash_manual": int(getattr(day_row, "opening_cash_manual", 0) or 0),
-                "suggested_opening_cash": float(suggested_opening),
+                "opening_cash": float(opening_cash),
+                "opening_source": opening_source,
+                "needs_initial_opening": bool(needs_initial_opening),
+                "is_closed": bool(is_closed),
                 "withdrawals_total": float(withdrawals_total),
                 "withdrawals": out_moves,
                 "gross_total": float(t["gross_total"]),
@@ -358,20 +420,29 @@ class WebviewBackend:
             return {"ok": False, "error": "Valor inválido"}
 
         with session_scope(self._session_factory) as session:
+            # Only allowed as the one-time initial opening when there are no prior closes.
+            any_close = session.query(CashClose.id).limit(1).first() is not None
+            if any_close:
+                return {"ok": False, "error": "La apertura se arrastra del cierre anterior. No se ingresa manual cada día."}
+
             row = self._ensure_cash_day(session, day)
             row.opening_cash = v
             row.opening_cash_manual = 1
             row.updated_at = datetime.utcnow()
-        return {"ok": True}
+        return {"ok": True, "opening_cash": float(v)}
 
     def useSuggestedOpeningCash(self, day_iso: str):
         day = (day_iso or "").strip()
         if not day:
             return {"ok": False, "error": "Día inválido"}
 
+        # Deprecated in the new flow; keep endpoint for compatibility.
         with session_scope(self._session_factory) as session:
+            any_close = session.query(CashClose.id).limit(1).first() is not None
+            if any_close:
+                return {"ok": False, "error": "Ya no aplica: la apertura se toma automáticamente del cierre anterior."}
             row = self._ensure_cash_day(session, day)
-            row.opening_cash = self._suggest_opening_cash(session, day)
+            row.opening_cash = Decimal("0.00")
             row.opening_cash_manual = 0
             row.updated_at = datetime.utcnow()
             return {"ok": True, "opening_cash": float(row.opening_cash)}
@@ -389,6 +460,8 @@ class WebviewBackend:
             return {"ok": False, "error": "El retiro debe ser mayor a 0"}
 
         with session_scope(self._session_factory) as session:
+            if session.query(CashClose.id).filter(CashClose.day == day).limit(1).first() is not None:
+                return {"ok": False, "error": "El día ya está cerrado. No se pueden agregar retiros."}
             self._ensure_cash_day(session, day)
             mv = CashMove(day=day, kind="withdrawal", amount=v, notes=(notes or "") or None)
             session.add(mv)
@@ -406,23 +479,25 @@ class WebviewBackend:
             session.delete(mv)
         return {"ok": True}
 
-    def closeCashDay(self, day_iso: str, cash_counted, carry_to_next_day, notes: str = ""):
+    def closeCashDay(self, day_iso: str, cash_counted, carry_to_next_day, notes: str = "", force: bool = False):
         day = (day_iso or "").strip()
         if not day:
             return {"ok": False, "error": "Día inválido"}
 
         cash_counted_d: Decimal | None = None
-        carry_d: Decimal | None = None
         try:
             if cash_counted is not None and str(cash_counted).strip() != "":
                 cash_counted_d = Decimal(str(cash_counted)).quantize(Decimal("0.01"))
-            if carry_to_next_day is not None and str(carry_to_next_day).strip() != "":
-                carry_d = Decimal(str(carry_to_next_day)).quantize(Decimal("0.01"))
         except Exception:
             return {"ok": False, "error": "Valores inválidos"}
 
         with session_scope(self._session_factory) as session:
-            day_row = self._ensure_cash_day(session, day)
+            # Idempotency: don't allow closing the same day twice.
+            if session.query(CashClose.id).filter(CashClose.day == day).limit(1).first() is not None:
+                return {"ok": False, "error": "La caja de este día ya fue cerrada."}
+
+            self._ensure_cash_day(session, day)
+            opening_cash, _, _ = self._get_opening_cash(session, day)
             sales = SalesRepo(session)
             t = sales.totals_for_day(day)
 
@@ -431,20 +506,28 @@ class WebviewBackend:
                 Decimal("0.01")
             )
 
-            expected_cash_end = (
-                Decimal(str(day_row.opening_cash or 0)) + Decimal(str(t["cash_total"] or 0)) - withdrawals_total
-            ).quantize(Decimal("0.01"))
-
-            if carry_d is None:
-                carry_d = expected_cash_end
+            expected_cash_end = (opening_cash + Decimal(str(t["cash_total"] or 0)) - withdrawals_total).quantize(
+                Decimal("0.01")
+            )
 
             diff: Decimal | None = None
             if cash_counted_d is not None:
                 diff = (cash_counted_d - expected_cash_end).quantize(Decimal("0.01"))
+                if diff != 0 and not bool(force):
+                    return {
+                        "ok": False,
+                        "error": f"Diferencia en caja: $ {diff} (contado - esperado).",
+                        "expected_cash_end": float(expected_cash_end),
+                        "cash_diff": float(diff),
+                        "needs_force": True,
+                    }
+
+            # Next day's opening:
+            carry_d = cash_counted_d if cash_counted_d is not None else expected_cash_end
 
             row = CashClose(
                 day=day,
-                opening_cash=Decimal(str(day_row.opening_cash or 0)).quantize(Decimal("0.01")),
+                opening_cash=opening_cash,
                 withdrawals_total=withdrawals_total,
                 gross_total=t["gross_total"],
                 cash_total=t["cash_total"],
@@ -460,6 +543,20 @@ class WebviewBackend:
             session.add(row)
             session.flush()
 
+            # Persist next day's opening for UI convenience.
+            try:
+                next_day = self._next_day(day)
+                next_row = self._ensure_cash_day(session, next_day)
+                next_row.opening_cash = carry_d
+                next_row.opening_cash_manual = 0
+                next_row.updated_at = datetime.utcnow()
+            except Exception:
+                pass
+
+            msg = None
+            if cash_counted_d is not None and (diff is None or diff == 0):
+                msg = "Todo cuadra. Mucha chamba por hoy, hora de dormir."
+
             return {
                 "ok": True,
                 "id": int(row.id),
@@ -468,6 +565,7 @@ class WebviewBackend:
                 "expected_cash_end": float(row.expected_cash_end),
                 "carry_to_next_day": float(row.carry_to_next_day),
                 "cash_diff": float(row.cash_diff) if row.cash_diff is not None else None,
+                "message": msg,
             }
 
     def listCashCloses(self, limit: int = 30):

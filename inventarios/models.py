@@ -132,3 +132,21 @@ class CashMove(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="withdrawal")
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class StockMove(Base):
+    __tablename__ = "stock_moves"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False, default=datetime.utcnow)
+
+    product_key: Mapped[str] = mapped_column(
+        String(255), ForeignKey("products.key", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # restock: added inventory; adjust: manual correction
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="restock")
+    delta: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stock_after: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
