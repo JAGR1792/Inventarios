@@ -16,7 +16,6 @@ const state = {
 let _invGridRenderSeq = 0
 
 const _moneyFmt = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const THEME_KEY = 'inventarios_theme'
 
 function fmtMoney(value) {
   const n = Number(value || 0)
@@ -55,11 +54,12 @@ function initUiModes() {
   state.ui.tablet = detectTabletMode()
 
   const liteParam = detectLiteMode()
-  // Auto-lite for tablets in browser mode unless explicitly disabled (?lite=0)
-  state.ui.lite = (liteParam === null) ? Boolean(state.ui.tablet && isHttpBrowser()) : Boolean(liteParam)
-  if (state.ui.lite) {
-    try { document.documentElement.dataset.lite = '1' } catch (e) { /* ignore */ }
-  }
+  // Tablet/kiosk is always lite. Desktop can still use ?lite=1 if needed.
+  state.ui.lite = state.ui.tablet ? true : (liteParam === null ? false : Boolean(liteParam))
+  try {
+    if (state.ui.lite) document.documentElement.dataset.lite = '1'
+    else delete document.documentElement.dataset.lite
+  } catch (e) { /* ignore */ }
 
   // Avoid huge DOM on low-end tablets.
   state.ui.gridLimit = state.ui.tablet ? (state.ui.lite ? 24 : 60) : 999999
@@ -75,38 +75,19 @@ function toast(msg) {
   el._t = setTimeout(() => { el.hidden = true }, 2400)
 }
 
-function getSavedTheme() {
-  try { return localStorage.getItem(THEME_KEY) || 'system' } catch (e) { return 'system' }
+// Theme support removed: use Dark-only.
+function applyDarkOnlyTheme() {
+  try {
+    document.documentElement.dataset.theme = 'dark'
+  } catch (e) { /* ignore */ }
+  try {
+    localStorage.removeItem('inventarios_theme')
+  } catch (e) { /* ignore */ }
 }
 
-function updateThemeButton(theme) {
-  const btn = document.getElementById('btnTheme')
-  if (!btn) return
-  const t = theme || 'system'
-  btn.textContent = (t === 'system') ? 'Tema' : (t === 'dark' ? 'Tema: Oscuro' : 'Tema: Claro')
-}
-
-function applyTheme(theme) {
-  const root = document.documentElement
-  if (theme === 'dark' || theme === 'light') {
-    root.dataset.theme = theme
-  } else {
-    delete root.dataset.theme
-    theme = 'system'
-  }
-  try { localStorage.setItem(THEME_KEY, theme) } catch (e) { /* ignore */ }
-  updateThemeButton(theme)
-}
-
-function cycleTheme() {
-  const cur = getSavedTheme()
-  const next = cur === 'system' ? 'dark' : (cur === 'dark' ? 'light' : 'system')
-  applyTheme(next)
-}
-
-// Apply lite-mode and theme as early as possible (does not require backend)
+// Apply lite-mode and dark theme as early as possible (does not require backend)
 initUiModes()
-applyTheme(getSavedTheme())
+applyDarkOnlyTheme()
 
 function createHttpBackend(baseUrl) {
   const base = String(baseUrl || '')
@@ -128,13 +109,60 @@ function createHttpBackend(baseUrl) {
     return data
   }
 
+  async function httpUpload(path, formData) {
+    const url = base + path
+    const res = await fetch(url, { method: 'POST', body: formData })
+    const txt = await res.text()
+    let data
+    try { data = txt ? JSON.parse(txt) : null } catch (e) { data = null }
+    if (!res.ok) {
+      const msg = (data && data.error) ? data.error : (`HTTP ${res.status}`)
+      throw new Error(msg)
+    }
+    return data
+  }
+
   return {
     getAppInfo: () => httpJson('GET', '/api/getAppInfo'),
     searchProducts: (q, limit) => httpJson('POST', '/api/searchProducts', { q, limit }),
     getCategories: () => httpJson('GET', '/api/getCategories'),
     restockProduct: (key, delta, notes) => httpJson('POST', '/api/restockProduct', { key, delta, notes }),
     setProductStock: (key, stock, notes) => httpJson('POST', '/api/setProductStock', { key, stock, notes }),
+    setProductInfo: (key, producto, descripcion) => httpJson('POST', '/api/setProductInfo', { key, producto, descripcion }),
+    setProductCategory: (key, category) => httpJson('POST', '/api/setProductCategory', { key, category }),
+    setProductPrice: (key, precio_final) => httpJson('POST', '/api/setProductPrice', { key, precio_final }),
+    clearProductImage: (key) => httpJson('POST', '/api/clearProductImage', { key }),
+    openImagesFolder: () => httpJson('POST', '/api/openImagesFolder', {}),
+    exportExcelSelect: () => httpJson('POST', '/api/exportExcelSelect', {}),
+    exportExcelToLast: () => httpJson('POST', '/api/exportExcelToLast', {}),
+    createProduct: (producto, descripcion, precio_final, unidades, category) => httpJson('POST', '/api/createProduct', { producto, descripcion, precio_final, unidades, category }),
+    uploadProductImage: async (key, file) => {
+      const fd = new FormData()
+      fd.append('key', String(key || ''))
+      fd.append('file', file)
+      return httpUpload('/api/uploadProductImage', fd)
+    },
   }
+}
+
+function pickFile(accept) {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    if (accept) input.accept = accept
+    input.style.position = 'fixed'
+    input.style.left = '-10000px'
+    input.style.top = '-10000px'
+    document.body.appendChild(input)
+
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0] ? input.files[0] : null
+      input.remove()
+      resolve(file)
+    }, { once: true })
+
+    input.click()
+  })
 }
 
 function selectedCategory() {
@@ -176,6 +204,8 @@ function renderGrid() {
       el.className = 'cardP'
       el.dataset.key = String(p.key ?? '').trim()
 
+      const img = p.image_url ? `<img src="${escapeHtmlAttr(p.image_url)}" alt="" loading="lazy" decoding="async" />` : '📦'
+
       const stock = Number(p.unidades || 0)
       const stockClass = stock <= 0 ? 'stockBad' : (stock <= 2 ? 'stockLow' : 'stockOk')
 
@@ -183,7 +213,7 @@ function renderGrid() {
       if (tablet) {
         el.innerHTML = `
           <div class="cardTop">
-            <div class="thumb">📦</div>
+            <div class="thumb">${img}</div>
             <div style="flex:1">
               <div class="pName">${escapeHtml(p.producto || '')}</div>
             </div>
@@ -196,7 +226,7 @@ function renderGrid() {
       } else {
         el.innerHTML = `
           <div class="cardTop">
-            <div class="thumb">📦</div>
+            <div class="thumb">${img}</div>
             <div style="flex:1">
               <div class="pName">${escapeHtml(p.producto || '')}</div>
               <div class="pDesc">${escapeHtml(p.descripcion || '')}</div>
@@ -310,6 +340,11 @@ function openModal(key) {
   document.getElementById('imTitle').textContent = p.producto || 'Producto'
   document.getElementById('imDesc').textContent = p.descripcion || ''
 
+  const nameEl = document.getElementById('imNameEdit')
+  if (nameEl) nameEl.value = String(p.producto || '')
+  const descEl = document.getElementById('imDescEdit')
+  if (descEl) descEl.value = String(p.descripcion || '')
+
   const stock = Number(p.unidades || 0)
   const stockClass = stock <= 0 ? 'stockBad' : (stock <= 2 ? 'stockLow' : 'stockOk')
   const stockEl = document.getElementById('imStock')
@@ -317,9 +352,17 @@ function openModal(key) {
   stockEl.className = `stock ${stockClass}`
 
   document.getElementById('imPrice').textContent = `$${fmtMoney(p.precio_final || 0)}`
+  const catEl = document.getElementById('imCategory')
+  if (catEl) catEl.value = String(p.category || '')
+  const priceEl = document.getElementById('imPriceEdit')
+  if (priceEl) priceEl.value = String(Number(p.precio_final || 0))
   document.getElementById('imRestockQty').value = '1'
   document.getElementById('imSetStock').value = String(stock)
   document.getElementById('imHint').textContent = 'Usa Rellenar para sumar. Ajustar stock para corregir.'
+
+  const thumb = document.getElementById('imThumb')
+  if (p.image_url) thumb.innerHTML = `<img src="${escapeHtmlAttr(p.image_url)}" alt="" />`
+  else thumb.textContent = '📦'
 
   document.getElementById('invModal').hidden = false
   setTimeout(() => {
@@ -352,6 +395,209 @@ async function doRestock() {
   openModal(key)
   renderGrid()
   toast('Stock actualizado')
+}
+
+async function doSaveCategory() {
+  const key = state.currentKey
+  if (!key) return
+  const cat = String(document.getElementById('imCategory')?.value || '').trim()
+  const res = await state.backend.setProductCategory(key, cat)
+  if (!res || !res.ok) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = res?.error || 'No se pudo guardar la categoría'
+    return
+  }
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+  if (p) p.category = cat
+  await loadCategories()
+  renderGrid()
+  toast('Categoría guardada')
+}
+
+async function doSavePrice() {
+  const key = state.currentKey
+  if (!key) return
+  const raw = String(document.getElementById('imPriceEdit')?.value || '').trim()
+  const price = Number(raw)
+  if (!Number.isFinite(price) || price < 0) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = 'Precio inválido'
+    return
+  }
+  const res = await state.backend.setProductPrice(key, price)
+  if (!res || !res.ok) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = res?.error || 'No se pudo guardar el precio'
+    return
+  }
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+  if (p) p.precio_final = Number(res.precio_final ?? price)
+  openModal(key)
+  renderGrid()
+  toast('Precio actualizado')
+}
+
+async function doSaveInfo() {
+  const key = state.currentKey
+  if (!key) return
+  const name = String(document.getElementById('imNameEdit')?.value || '').trim()
+  const desc = String(document.getElementById('imDescEdit')?.value || '').trim()
+
+  const err = document.getElementById('imError')
+  if (err) { err.hidden = true; err.textContent = '' }
+
+  if (!name) {
+    if (err) { err.hidden = false; err.textContent = 'Nombre requerido' }
+    return
+  }
+
+  if (!state.backend?.setProductInfo) {
+    if (err) { err.hidden = false; err.textContent = 'Acción no disponible' }
+    return
+  }
+
+  const res = await state.backend.setProductInfo(key, name, desc)
+  if (!res || !res.ok) {
+    if (err) { err.hidden = false; err.textContent = res?.error || 'No se pudo guardar' }
+    return
+  }
+
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+  if (p) { p.producto = name; p.descripcion = desc }
+  openModal(key)
+  renderGrid()
+  toast('Producto actualizado')
+}
+
+async function doExportExcel() {
+  if (!state.backend) return
+
+  // Tablet-friendly: export to the last configured file.
+  if (state.backend.exportExcelToLast) {
+    const res = await state.backend.exportExcelToLast()
+    if (res && res.ok) return toast(`Excel actualizado (${res.written || 0} filas)`)
+    return toast(res?.error || 'Export falló')
+  }
+
+  return toast('Export no disponible')
+}
+
+async function doPickImage() {
+  const key = state.currentKey
+  if (!key) return
+
+  // Web mode (tablet): upload file
+  if (state.backend?.uploadProductImage) {
+    const file = await pickFile('image/*')
+    if (!file) return
+    const res = await state.backend.uploadProductImage(key, file)
+    if (!res || !res.ok) {
+      const err = document.getElementById('imError')
+      err.hidden = false
+      err.textContent = res?.error || 'No se pudo cargar imagen'
+      return
+    }
+    const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+    if (p) p.image_url = res.image_url || p.image_url
+    openModal(key)
+    renderGrid()
+    toast('Imagen actualizada')
+    return
+  }
+
+  // Desktop mode (pywebview): open OS file picker
+  const res = await state.backend.pickProductImage(key)
+  if (!res || !res.ok) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = res?.error || 'No se pudo cargar imagen'
+    return
+  }
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+  if (p) p.image_url = res.image_url || p.image_url
+  openModal(key)
+  renderGrid()
+  toast('Imagen actualizada')
+}
+
+async function doClearImage() {
+  const key = state.currentKey
+  if (!key) return
+  const res = await state.backend.clearProductImage(key)
+  if (!res || !res.ok) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = res?.error || 'No se pudo quitar imagen'
+    return
+  }
+  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+  if (p) p.image_url = null
+  openModal(key)
+  renderGrid()
+  toast('Imagen removida')
+}
+
+function openNewProductModal() {
+  const m = document.getElementById('newProdModal')
+  if (!m) return
+  const err = document.getElementById('npError')
+  if (err) { err.hidden = true; err.textContent = '' }
+  document.getElementById('npName').value = ''
+  document.getElementById('npDesc').value = ''
+  document.getElementById('npPrice').value = ''
+  document.getElementById('npStock').value = '0'
+  document.getElementById('npCategory').value = ''
+  m.hidden = false
+  setTimeout(() => {
+    const el = document.getElementById('npName')
+    if (el) el.focus()
+  }, 0)
+}
+
+function closeNewProductModal() {
+  const m = document.getElementById('newProdModal')
+  if (m) m.hidden = true
+}
+
+async function doCreateProduct() {
+  const name = String(document.getElementById('npName')?.value || '').trim()
+  const desc = String(document.getElementById('npDesc')?.value || '').trim()
+  const cat = String(document.getElementById('npCategory')?.value || '').trim()
+  const priceRaw = String(document.getElementById('npPrice')?.value || '').trim()
+  const stockRaw = String(document.getElementById('npStock')?.value || '').trim()
+  const price = priceRaw ? Number(priceRaw) : 0
+  const stock = stockRaw ? Number(stockRaw) : 0
+
+  const err = document.getElementById('npError')
+  if (err) { err.hidden = true; err.textContent = '' }
+
+  if (!name) {
+    if (err) { err.hidden = false; err.textContent = 'Nombre requerido' }
+    return
+  }
+  if (!Number.isFinite(price) || price < 0) {
+    if (err) { err.hidden = false; err.textContent = 'Precio inválido' }
+    return
+  }
+  if (!Number.isFinite(stock) || stock < 0) {
+    if (err) { err.hidden = false; err.textContent = 'Stock inválido' }
+    return
+  }
+
+  const res = await state.backend.createProduct(name, desc, price, Math.round(stock), cat)
+  if (!res || !res.ok) {
+    if (err) { err.hidden = false; err.textContent = res?.error || 'No se pudo crear producto' }
+    return
+  }
+
+  closeNewProductModal()
+  await loadCategories()
+  await searchProducts()
+  if (res.key) openModal(res.key)
+  toast('Producto creado')
 }
 
 async function doSetStock() {
@@ -390,12 +636,6 @@ async function init() {
   await loadCategories()
   await searchProducts()
 
-  const btnTheme = document.getElementById('btnTheme')
-  if (btnTheme) {
-    updateThemeButton(getSavedTheme())
-    btnTheme.addEventListener('click', () => cycleTheme())
-  }
-
   const sel = document.getElementById('invCategory')
   if (sel) sel.addEventListener('change', () => renderGrid())
 
@@ -414,6 +654,21 @@ async function init() {
   const refresh = document.getElementById('btnRefreshInv')
   if (refresh) refresh.addEventListener('click', async () => { await loadCategories(); await searchProducts() })
 
+  const btnOpenImages = document.getElementById('btnOpenImages')
+  if (btnOpenImages) {
+    btnOpenImages.addEventListener('click', async () => {
+      if (!state.backend?.openImagesFolder) return
+      const res = await state.backend.openImagesFolder()
+      if (!res || !res.ok) toast(res?.error || 'No se pudo abrir carpeta de imágenes')
+    })
+  }
+
+  const btnNewProduct = document.getElementById('btnNewProduct')
+  if (btnNewProduct) btnNewProduct.addEventListener('click', openNewProductModal)
+
+  const btnExportExcel = document.getElementById('btnExportExcel')
+  if (btnExportExcel) btnExportExcel.addEventListener('click', doExportExcel)
+
   const grid = document.getElementById('invGrid')
   if (grid) grid.addEventListener('click', (e) => {
     const btn = e.target?.closest?.('button[data-open]')
@@ -423,8 +678,16 @@ async function init() {
   })
 
   document.getElementById('imClose').addEventListener('click', closeModal)
+  document.getElementById('imSaveInfoBtn').addEventListener('click', doSaveInfo)
   document.getElementById('imRestockBtn').addEventListener('click', doRestock)
   document.getElementById('imSetStockBtn').addEventListener('click', doSetStock)
+  document.getElementById('imSaveCatBtn').addEventListener('click', doSaveCategory)
+  document.getElementById('imSavePriceBtn').addEventListener('click', doSavePrice)
+  document.getElementById('imPickImg').addEventListener('click', doPickImage)
+  document.getElementById('imClearImg').addEventListener('click', doClearImage)
+
+  document.getElementById('npCancel').addEventListener('click', closeNewProductModal)
+  document.getElementById('npCreate').addEventListener('click', doCreateProduct)
 }
 
 window.addEventListener('DOMContentLoaded', () => {

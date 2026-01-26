@@ -24,6 +24,9 @@ class Settings:
     # Excel import (optional)
     EXCEL_IMPORT_PATH: str = os.environ.get("EXCEL_IMPORT_PATH", "GAROM OK.xlsx")
     EXCEL_WORKSHEET_NAME: str = os.environ.get("EXCEL_WORKSHEET_NAME", "INVENTARIO")
+    # Excel export (inventory sync)
+    # Keep this separate from import because many workbooks have a different sheet for costs.
+    EXCEL_EXPORT_WORKSHEET_NAME: str = os.environ.get("EXCEL_EXPORT_WORKSHEET_NAME", "INVENTARIO")
     LOCAL_EXCEL_ENGINE: str = os.environ.get("LOCAL_EXCEL_ENGINE", "openpyxl")
 
     # Images

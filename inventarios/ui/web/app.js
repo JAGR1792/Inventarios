@@ -372,48 +372,29 @@ function detectLiteMode() {
   }
 }
 
-const THEME_KEY = 'inventarios_theme'
+// Theme support removed: use Dark-only.
+function applyDarkOnlyTheme() {
+  try {
+    document.documentElement.dataset.theme = 'dark'
+  } catch (e) { /* ignore */ }
+  try {
+    localStorage.removeItem('inventarios_theme')
+  } catch (e) { /* ignore */ }
+}
 
 // Cache formatter (Intl is expensive if recreated per call)
 const _moneyFmt = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-function getSavedTheme() {
-  try {
-    const v = String(localStorage.getItem(THEME_KEY) || '').trim()
-    if (v === 'dark' || v === 'light' || v === 'system') return v
-  } catch (e) {
-    // ignore
-  }
-  return 'system'
-}
+// Apply dark as early as possible (does not require backend)
+applyDarkOnlyTheme()
 
-function updateThemeButton(theme) {
-  const btn = document.getElementById('btnTheme')
-  if (!btn) return
-  const label = theme === 'system' ? 'System' : (theme === 'dark' ? 'Dark' : 'Light')
-  btn.textContent = `Tema: ${label}`
-}
-
-function applyTheme(theme) {
-  const root = document.documentElement
-  if (theme === 'dark' || theme === 'light') {
-    root.dataset.theme = theme
-  } else {
-    delete root.dataset.theme
-    theme = 'system'
-  }
-  try { localStorage.setItem(THEME_KEY, theme) } catch (e) { /* ignore */ }
-  updateThemeButton(theme)
-}
-
-function cycleTheme() {
-  const cur = getSavedTheme()
-  const next = cur === 'system' ? 'dark' : (cur === 'dark' ? 'light' : 'system')
-  applyTheme(next)
-}
-
-// Apply theme as early as possible (does not require backend)
-applyTheme(getSavedTheme())
+// Kiosk/tablet devices are always in lite mode to minimize RAM/GPU usage.
+// Apply as early as possible to avoid expensive CSS effects on first paint.
+try {
+  state.ui.tablet = detectTabletMode()
+  state.ui.lite = Boolean(state.ui.tablet)
+  if (state.ui.lite) document.documentElement.dataset.lite = '1'
+} catch (e) { /* ignore */ }
 
 function fmtMoney(value) {
   const n = Number(value || 0)
@@ -1085,6 +1066,17 @@ async function closeCashDay(force = false) {
     ok.textContent = (res.message ? String(res.message) + ' ' : '') + `Cierre guardado (${res.created_at || ''})` + (res.cash_diff != null ? ` • Dif $${fmtMoney(res.cash_diff)}` : '')
   }
   toast('Cierre guardado')
+
+  // If server auto-exported to Excel on close, surface it.
+  try {
+    const ex = res && res.excel_export
+    if (ex && ex.ok) {
+      toast(`Excel actualizado (${ex.written || 0} filas)`) 
+    } else if (ex && ex.ok === false) {
+      toast(ex.error || 'Excel: no se pudo exportar')
+    }
+  } catch (e) { /* ignore */ }
+
   refreshCashPanel()
   refreshCashCloses()
   closeCashCloseModal()
@@ -1365,6 +1357,9 @@ function setupHandlers() {
   const btnImport = document.getElementById('btnImport')
   if (btnImport) btnImport.addEventListener('click', doImport)
 
+  const btnExport = document.getElementById('btnExportExcel')
+  if (btnExport) btnExport.addEventListener('click', doExportExcel)
+
   const btnOpenImages = document.getElementById('btnOpenImages')
   if (btnOpenImages) {
     btnOpenImages.addEventListener('click', async () => {
@@ -1376,11 +1371,6 @@ function setupHandlers() {
     })
   }
 
-  const btnTheme = document.getElementById('btnTheme')
-  if (btnTheme) {
-    updateThemeButton(getSavedTheme())
-    btnTheme.addEventListener('click', () => cycleTheme())
-  }
   // Product modal
   const pmCancel = document.getElementById('pmCancel')
   const pmSaveCat = document.getElementById('pmSaveCat')
@@ -1590,6 +1580,9 @@ function createHttpBackend(baseUrl) {
     deleteCashMove: (id) => httpJson('POST', '/api/deleteCashMove', { id }),
     closeCashDay: (day, cash_counted, notes, force) => httpJson('POST', '/api/closeCashDay', { day, cash_counted, notes, force }),
 
+    exportExcelSelect: () => httpJson('POST', '/api/exportExcelSelect', {}),
+    exportExcelToLast: () => httpJson('POST', '/api/exportExcelToLast', {}),
+
     setProductCategory: (key, category) => httpJson('POST', '/api/setProductCategory', { key, category }),
     clearProductImage: (key) => httpJson('POST', '/api/clearProductImage', { key }),
     restockProduct: (key, delta, notes) => httpJson('POST', '/api/restockProduct', { key, delta, notes }),
@@ -1609,6 +1602,22 @@ function createHttpBackend(baseUrl) {
       fd.append('file', file)
       return httpUpload('/api/importExcelUpload', fd)
     },
+  }
+}
+
+async function doExportExcel() {
+  if (!state.backend) return
+  try {
+    // Prefer exporting to the last configured file (tablet-friendly).
+    if (state.backend.exportExcelToLast) {
+      const res = await state.backend.exportExcelToLast()
+      if (res && res.ok) return toast(`Excel actualizado (${res.written || 0} filas)`)
+      return toast(res?.error || 'Export falló')
+    }
+
+    return toast('Export no disponible')
+  } catch (e) {
+    toast(String(e?.message || e || 'Export falló'))
   }
 }
 
@@ -1640,11 +1649,12 @@ function initBackendCommon() {
   state.ui.tablet = detectTabletMode()
 
   const liteParam = detectLiteMode()
-  // Auto-lite for tablets in browser mode unless explicitly disabled (?lite=0)
-  state.ui.lite = (liteParam === null) ? Boolean(state.ui.tablet && isHttpBrowser()) : Boolean(liteParam)
-  if (state.ui.lite) {
-    try { document.documentElement.dataset.lite = '1' } catch (e) { /* ignore */ }
-  }
+  // Tablet/kiosk is always lite. Desktop can still use ?lite=1 if needed.
+  state.ui.lite = state.ui.tablet ? true : (liteParam === null ? false : Boolean(liteParam))
+  try {
+    if (state.ui.lite) document.documentElement.dataset.lite = '1'
+    else delete document.documentElement.dataset.lite
+  } catch (e) { /* ignore */ }
 
   // Avoid huge DOM on low-end tablets.
   state.ui.gridLimit = state.ui.tablet ? (state.ui.lite ? 24 : 60) : 999999

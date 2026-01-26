@@ -27,8 +27,8 @@
         </nav>
 
         <div class="actions">
-          <button class="btn ghost" id="btnTheme" title="Cambiar tema (System / Dark / Light)">Tema</button>
           <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
+          <button class="btn" id="btnExportExcel" title="Escribir inventario al Excel (en el PC del servidor)">Exportar Excel</button>
           <button class="btn" id="btnNewProduct" title="Crear un nuevo producto">Nuevo producto</button>
           <button class="btn" id="btnRefreshInv" title="Volver a cargar productos">Actualizar</button>
         </div>
@@ -66,6 +66,17 @@
             <div class="pmThumb" id="imThumb">📦</div>
             <div class="flex1">
               <div class="modalText" id="imDesc"></div>
+
+              <label class="field mt10">
+                <span>Nombre</span>
+                <input id="imNameEdit" type="text" placeholder="Nombre del producto" autocomplete="off" />
+              </label>
+
+              <label class="field mt10">
+                <span>Descripción / gramos / cómo se vende</span>
+                <input id="imDescEdit" type="text" placeholder="Ej: 500g / 1lb / por unidad" autocomplete="off" />
+              </label>
+
               <div class="pmMeta">
                 <div>Stock: <span class="stock" id="imStock">0</span></div>
                 <div class="pmPrice" id="imPrice">$0,00</div>
@@ -100,6 +111,7 @@
           </div>
           <div class="modalActions">
             <button class="btn" id="imClose">Cerrar</button>
+            <button class="btn" id="imSaveInfoBtn" type="button">Guardar nombre/desc</button>
             <button class="btn" id="imSaveCatBtn" type="button">Guardar categoría</button>
             <button class="btn" id="imSavePriceBtn" type="button">Guardar precio</button>
             <button class="btn" id="imPickImg" type="button">Cambiar imagen</button>

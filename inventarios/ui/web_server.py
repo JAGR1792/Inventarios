@@ -183,6 +183,21 @@ def create_app(session_factory, settings: Settings) -> Flask:
         data = request.get_json(silent=True) or {}
         return _ok(backend.setProductPrice(data.get("key"), data.get("precio_final")))
 
+    @app.post("/api/setProductInfo")
+    def api_set_product_info():
+        data = request.get_json(silent=True) or {}
+        return _ok(backend.setProductInfo(data.get("key"), data.get("producto"), data.get("descripcion", "")))
+
+    @app.route("/api/exportExcelSelect", methods=["POST", "GET"])
+    def api_export_excel_select():
+        # Opens a file picker on the server machine (Windows).
+        return _ok(backend.exportExcelSelect())
+
+    @app.route("/api/exportExcelToLast", methods=["POST", "GET"])
+    def api_export_excel_to_last():
+        # Uses the last selected Excel path (stored on the server).
+        return _ok(backend.exportExcelToLast())
+
     @app.post("/api/createProduct")
     def api_create_product():
         data = request.get_json(silent=True) or {}

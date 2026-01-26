@@ -129,6 +129,26 @@ class ProductRepo:
             return False
         row.category = (category or "").strip()
 
+    def set_info(self, product_key: str, *, producto: str, descripcion: str) -> bool:
+        k = (product_key or "").strip()
+        if not k:
+            raise RuntimeError("Producto inválido")
+
+        name = (producto or "").strip()
+        if not name:
+            raise RuntimeError("Nombre inválido")
+
+        desc = (descripcion or "").strip()
+
+        row = self.session.execute(select(Product).where(Product.key == k)).scalar_one_or_none()
+        if row is None:
+            raise RuntimeError("Producto no encontrado")
+
+        row.producto = name
+        row.descripcion = desc
+        row.updated_at = datetime.utcnow()
+        return True
+
     def adjust_stock(self, product_key: str, *, delta: int, kind: str = "restock", notes: str | None = None) -> int:
         k = (product_key or "").strip()
         if not k:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -9,10 +10,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+import threading
 
 from sqlalchemy import delete, update
 
 from inventarios.db import session_scope
+from inventarios.excel_export import ExportRow, export_inventory_to_excel
 from inventarios.excel_import import ExcelImporter
 from inventarios.models import CashClose, CashDay, CashMove, Product, ProductImage, Sale, SaleLine
 from inventarios.repos import ProductRepo, SalesRepo
@@ -54,6 +57,15 @@ def _safe_filename(name: str) -> str:
 
 
 def _ask_open_filename(title: str, filetypes: list[tuple[str, str]]):
+    # Flask runs handlers in worker threads; Tk file dialogs must run on the main thread.
+    # In HTTP/tablet mode we cannot safely open OS dialogs from a request thread.
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError(
+            "El selector de archivos solo funciona en el PC (hilo principal). "
+            "En modo servidor/tablet configura el Excel copiándolo a la carpeta 'instance' "
+            "(ruta recomendada) o usando el import/export desde el PC."
+        )
+
     # Tkinter is in the stdlib on Windows python.org builds.
     # We keep it isolated so importing this module doesn't pop a window.
     import tkinter as tk
@@ -95,6 +107,93 @@ class WebviewBackend:
     def __init__(self, session_factory, settings: Settings):
         self._session_factory = session_factory
         self._settings = settings
+
+    def _excel_sync_path(self) -> Path:
+        return (self._settings.INSTANCE_DIR / "excel_sync.json").resolve()
+
+    def _default_excel_path(self) -> Path:
+        p = Path(getattr(self._settings, "EXCEL_IMPORT_PATH", "") or "GAROM OK.xlsx")
+        if not p.is_absolute():
+            p = (self._settings.INSTANCE_DIR / p)
+        return p.resolve()
+
+    def _load_excel_sync(self) -> dict:
+        p = self._excel_sync_path()
+        if not p.exists():
+            # If user placed the Excel in the recommended default location, pick it up automatically.
+            d = self._default_excel_path()
+            last = str(d) if d.exists() else None
+            return {"last_excel_path": last, "auto_export_on_close": True}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            d = self._default_excel_path()
+            last = str(d) if d.exists() else None
+            return {"last_excel_path": last, "auto_export_on_close": True}
+        if not isinstance(data, dict):
+            d = self._default_excel_path()
+            last = str(d) if d.exists() else None
+            return {"last_excel_path": last, "auto_export_on_close": True}
+
+        last = data.get("last_excel_path")
+        if isinstance(last, str):
+            last = last.strip() or None
+        else:
+            last = None
+
+        # If configured file is missing, fall back to default location if present.
+        if last:
+            try:
+                if not Path(last).exists():
+                    last = None
+            except Exception:
+                last = None
+
+        if not last:
+            d = self._default_excel_path()
+            if d.exists():
+                last = str(d)
+
+        return {"last_excel_path": last, "auto_export_on_close": bool(data.get("auto_export_on_close", True))}
+
+    def _save_excel_sync(self, data: dict) -> None:
+        p = self._excel_sync_path()
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+
+    def _export_inventory_to_excel_path(self, file_path: str) -> dict:
+        fp = (file_path or "").strip()
+        if not fp:
+            return {"ok": False, "error": "Ruta inválida"}
+
+        xlsx = Path(fp)
+        if not xlsx.exists():
+            return {"ok": False, "error": "El archivo Excel no existe"}
+
+        with session_scope(self._session_factory) as session:
+            rows = session.query(Product).order_by(Product.producto.asc()).all()
+            out_rows: list[ExportRow] = []
+            for r in rows:
+                out_rows.append(
+                    ExportRow(
+                        producto=str(r.producto or ""),
+                        descripcion=str(r.descripcion or ""),
+                        unidades=int(r.unidades or 0),
+                        precio_final=Decimal(str(r.precio_final or 0)).quantize(Decimal("0.01")),
+                    )
+                )
+
+        try:
+            written, worksheet_used = export_inventory_to_excel(
+                xlsx_path=xlsx,
+                worksheet_name=getattr(self._settings, "EXCEL_EXPORT_WORKSHEET_NAME", "INVENTARIO"),
+                rows=out_rows,
+            )
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+        return {"ok": True, "path": str(xlsx), "written": int(written), "worksheet": str(worksheet_used)}
 
     def getAppInfo(self):
         db_url = str(getattr(self._settings, "DATABASE_URL", "") or "")
@@ -187,6 +286,15 @@ class WebviewBackend:
         with session_scope(self._session_factory) as session:
             repo = ProductRepo(session)
             ok = repo.set_category(key, category)
+        return {"ok": bool(ok)}
+
+    def setProductInfo(self, key: str, producto: str, descripcion: str = ""):
+        with session_scope(self._session_factory) as session:
+            repo = ProductRepo(session)
+            try:
+                ok = repo.set_info(key, producto=producto, descripcion=descripcion)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
         return {"ok": bool(ok)}
 
     def restockProduct(self, key: str, delta: int, notes: str = ""):
@@ -557,6 +665,15 @@ class WebviewBackend:
             if cash_counted_d is not None and (diff is None or diff == 0):
                 msg = "Todo cuadra. Mucha chamba por hoy, hora de dormir."
 
+            export_res = None
+            try:
+                sync = self._load_excel_sync()
+                last_path = (sync.get("last_excel_path") or "").strip()
+                if bool(sync.get("auto_export_on_close", True)) and last_path:
+                    export_res = self._export_inventory_to_excel_path(last_path)
+            except Exception:
+                export_res = None
+
             return {
                 "ok": True,
                 "id": int(row.id),
@@ -566,6 +683,7 @@ class WebviewBackend:
                 "carry_to_next_day": float(row.carry_to_next_day),
                 "cash_diff": float(row.cash_diff) if row.cash_diff is not None else None,
                 "message": msg,
+                "excel_export": export_res,
             }
 
     def listCashCloses(self, limit: int = 30):
@@ -622,7 +740,10 @@ class WebviewBackend:
         return {"total_vendido": float(total), "ultimas_ventas": out_last}
 
     def importExcel(self):
-        file_name = _ask_open_filename("Importar desde Excel", [("Excel", "*.xlsx"), ("Todos", "*.*")])
+        try:
+            file_name = _ask_open_filename("Importar desde Excel", [("Excel", "*.xlsx"), ("Todos", "*.*")])
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
         if not file_name:
             return {"ok": False, "error": "Importación cancelada"}
 
@@ -644,9 +765,52 @@ class WebviewBackend:
                 repo = ProductRepo(session)
                 changed = repo.upsert_many(products)
 
+            # Remember this Excel path for future exports.
+            try:
+                sync = self._load_excel_sync()
+                sync["last_excel_path"] = str(Path(file_name).resolve())
+                if "auto_export_on_close" not in sync:
+                    sync["auto_export_on_close"] = True
+                self._save_excel_sync(sync)
+            except Exception:
+                pass
+
             return {"ok": True, "imported": int(len(products)), "upserted": int(changed)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def exportExcelSelect(self):
+        try:
+            file_name = _ask_open_filename(
+                "Exportar inventario a Excel (selecciona el archivo)",
+                [("Excel", "*.xlsx"), ("Todos", "*.*")],
+            )
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        if not file_name:
+            return {"ok": False, "error": "Exportación cancelada"}
+
+        res = self._export_inventory_to_excel_path(file_name)
+        if res.get("ok"):
+            try:
+                sync = self._load_excel_sync()
+                sync["last_excel_path"] = str(Path(file_name).resolve())
+                if "auto_export_on_close" not in sync:
+                    sync["auto_export_on_close"] = True
+                self._save_excel_sync(sync)
+            except Exception:
+                pass
+        return res
+
+    def exportExcelToLast(self):
+        sync = self._load_excel_sync()
+        last_path = (sync.get("last_excel_path") or "").strip()
+        if not last_path:
+            return {
+                "ok": False,
+                "error": f"No hay Excel configurado aún.\n\nOpciones:\n- En el PC del servidor: usa 'Exportar Excel' y selecciona el archivo.\n- O coloca el Excel aquí: {self._default_excel_path()}\n\nLuego, al cerrar caja se exporta automático.",
+            }
+        return self._export_inventory_to_excel_path(last_path)
 
     def resetDatabase(self, confirm_text: str):
         if (confirm_text or "").strip().upper() != "BORRAR":
