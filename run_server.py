@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import socket
 import sys
+import threading
 
 from inventarios.db import create_engine_from_url, init_db, make_session_factory
 from inventarios.settings import Settings
@@ -118,7 +119,12 @@ def main() -> int:
         + "\n\nSi ya estaba abierto, ignora este mensaje."
     )
     if show_ui:
-        _msgbox(msg, "Inventarios - Servidor Tablet")
+        # Don't block server startup waiting for the user to close the dialog.
+        threading.Thread(
+            target=_msgbox,
+            args=(msg, "Inventarios - Servidor Tablet"),
+            daemon=True,
+        ).start()
     else:
         print(msg)
 

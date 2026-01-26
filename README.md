@@ -57,6 +57,15 @@ Para usar el POS desde una tablet Android en la misma red (sin instalar nada en 
 - Iniciar servidor web: `python run_server.py --host 0.0.0.0 --port 8000`
 - En la tablet, abrir: `http://IP-DE-LA-PC:8000/store.html?lite=1`
 
+### Doble clic (Windows) para iniciar el servidor (sin consola)
+En este repo hay launchers listos para Windows:
+
+- `IniciarServidorTablet_Oculto.vbs` (recomendado): inicia el servidor en segundo plano y muestra un mensaje con la URL.
+- `IniciarServidorTablet.bat`: hace lo mismo y además abre `http://127.0.0.1:8000/` en el navegador.
+- `DetenerServidorTablet.bat`: detiene el servidor (mata el proceso que escucha en el puerto 8000).
+
+El log queda en `instance/server.log`.
+
 Notas:
 - `?lite=1` es recomendado para Android WebView (menos efectos, más fluido).
 - La carpeta `instance/` guarda la DB e imágenes locales y **no se versiona**.
@@ -65,6 +74,11 @@ Notas:
 Si quieres empaquetar para Windows, usa el script:
 
 - `./scripts/build_exe.ps1`
+
+Para el modo tablet como `.exe` (para que el instalador cree el acceso directo **Inventarios POS - Servidor Tablet**):
+
+- `./scripts/build_server_exe.ps1`
+- `./scripts/build_installer.ps1`
 
 Los artefactos `build/`, `dist/` y `dist_installer/` son **generados** y no se versionan.
 

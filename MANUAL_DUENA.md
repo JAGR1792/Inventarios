@@ -76,7 +76,22 @@ Durante la instalación, también puede aparecer una pregunta:
 
 Si eliges **Sí**, la tablet funcionará aunque nadie abra nada (solo con prender la PC).
 
+> Si NO ves el acceso directo “Servidor Tablet”, normalmente significa que el instalador no incluyó el ejecutable del servidor.
+> En ese caso, busca en la carpeta donde quedó instalado y ejecuta:
+> - `InventariosServer.exe`
+> (también puedes crear un acceso directo a ese archivo).
+
 ### Opción B: si el servidor ya estaba iniciado
 
 Si intentas iniciarlo y ya está funcionando, puede salir un aviso de que el puerto está ocupado.
 En ese caso **no pasa nada**: normalmente significa que **ya está corriendo**.
+
+### Opción C (solo si usas el proyecto en la PC, no el instalador)
+Si estás usando el proyecto (con Python y dependencias instaladas), puedes iniciar con doble clic:
+
+- `IniciarServidorTablet_Oculto.vbs` (recomendado)
+- `IniciarServidorTablet.bat`
+
+Y para detenerlo:
+
+- `DetenerServidorTablet.bat`
