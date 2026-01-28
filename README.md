@@ -30,6 +30,15 @@ Motor:
 - `LOCAL_EXCEL_ENGINE=openpyxl` (rápido)
 - `LOCAL_EXCEL_ENGINE=excel` (Windows + Excel instalado): mejor para valores de fórmulas
 
+## 🔄 Google Sheets (opcional): Sincronización automática
+**¡NUEVO!** Ahora puedes sincronizar el inventario con Google Sheets en tiempo real:
+- ✅ Exportar inventario automáticamente a Google Sheets
+- ✅ Importar cambios desde Google Sheets
+- ✅ Acceso desde cualquier lugar con tu cuenta de Google
+- ✅ Sincronización bidireccional
+
+👉 **Ver guía completa**: [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
+
 ## Por qué no usar Excel como “base de datos”
 Excel es excelente para planillas, pero como motor de datos es frágil (bloqueos al abrir, fórmulas no recalculadas por librerías, riesgo de corrupción, bajo rendimiento al leer/escribir).
 
@@ -45,6 +54,7 @@ Copia `.env.example` a `.env` y ajusta:
 - `EXCEL_WORKSHEET_NAME` (por defecto: `Costos`)
 - `LOCAL_EXCEL_ENGINE` (`openpyxl` o `excel`)
 - `IMAGES_DIR` (opcional)
+- **Google Sheets** (opcional): Ver [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) para sincronización automática
 
 ## Ejecutar
 - Instalar deps: `pip install -r requirements.txt`
@@ -93,8 +103,13 @@ Manual para el dueño/a (imágenes y operación):
 La interfaz es HTML/CSS/JS corriendo en Edge WebView2 embebido (rápido y con buena compatibilidad web).
 
 Vistas:
-- **Tienda**: grilla tipo catálogo.
-- **Resumen del día**: total vendido y últimas ventas + histórico de cierres.
+- **Tienda**: grilla tipo catálogo con scroll en carrito desktop.
+- **Inventario**: gestión completa con scroll en modales largos, botón para limpiar duplicados.
+- **Resumen del día**: 
+  - 🏆 **Productos estrella** con slider horizontal (deslizable)
+  - 📋 **Últimas ventas** con resumen de productos vendidos
+  - 🔍 **Detalle de venta** expandible al hacer clic
+  - 📊 **Menús desplegables** tipo acordeón para mejor organización
 - **Caja (panel derecho fijo)**: ticket/checkout + cierre de caja del día.
 
 Cierre de caja:

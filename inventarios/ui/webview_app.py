@@ -30,6 +30,23 @@ def run_app_webview(session_factory, settings: Settings) -> int:
         raise FileNotFoundError(f"Web UI not found: {index_html}")
 
     backend = WebviewBackend(session_factory=session_factory, settings=settings)
+    
+    # Auto-importar desde Google Sheets al iniciar
+    try:
+        from inventarios.google_sheets import GoogleSheetsSync
+        sync = GoogleSheetsSync()
+        if sync.enabled:
+            print("📥 Sincronizando desde Google Sheets...")
+            products = sync.import_products()
+            if products:
+                from inventarios.repos import ProductRepo
+                from inventarios.db import session_scope
+                with session_scope(session_factory) as session:
+                    repo = ProductRepo(session)
+                    count = repo.upsert_many(products)
+                print(f"✅ Importados {len(products)} productos ({count} actualizados)")
+    except Exception as e:
+        print(f"⚠️  Error en auto-importación: {e}")
 
     # Note: pywebview injects window.pywebview and triggers 'pywebviewready' in JS.
     webview.create_window(

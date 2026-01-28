@@ -128,6 +128,9 @@ function createHttpBackend(baseUrl) {
     getCategories: () => httpJson('GET', '/api/getCategories'),
     restockProduct: (key, delta, notes) => httpJson('POST', '/api/restockProduct', { key, delta, notes }),
     setProductStock: (key, stock, notes) => httpJson('POST', '/api/setProductStock', { key, stock, notes }),
+    deleteProduct: (key, confirm_text) => httpJson('POST', '/api/deleteProduct', { key, confirm_text }),
+    findDuplicates: () => httpJson('GET', '/api/findDuplicates'),
+    deleteDuplicates: (keep_first) => httpJson('POST', '/api/deleteDuplicates', { keep_first }),
     setProductInfo: (key, producto, descripcion) => httpJson('POST', '/api/setProductInfo', { key, producto, descripcion }),
     setProductCategory: (key, category) => httpJson('POST', '/api/setProductCategory', { key, category }),
     setProductPrice: (key, precio_final) => httpJson('POST', '/api/setProductPrice', { key, precio_final }),
@@ -360,6 +363,9 @@ function openModal(key) {
   document.getElementById('imSetStock').value = String(stock)
   document.getElementById('imHint').textContent = 'Usa Rellenar para sumar. Ajustar stock para corregir.'
 
+  const delBtn = document.getElementById('imDeleteProduct')
+  if (delBtn) delBtn.hidden = !state.backend?.deleteProduct
+
   const thumb = document.getElementById('imThumb')
   if (p.image_url) thumb.innerHTML = `<img src="${escapeHtmlAttr(p.image_url)}" alt="" />`
   else thumb.textContent = '📦'
@@ -379,7 +385,13 @@ function closeModal() {
 async function doRestock() {
   const key = state.currentKey
   if (!key) return
-  const qty = Math.max(1, Number(document.getElementById('imRestockQty').value || 0))
+  const qty = Number(document.getElementById('imRestockQty').value || 0)
+  if (!Number.isFinite(qty) || qty <= 0) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = 'Cantidad inválida (usa 1 o más para Rellenar)'
+    return
+  }
   const notes = prompt('Notas (opcional):', 'relleno')
 
   const res = await state.backend.restockProduct(key, qty, notes || '')
@@ -587,17 +599,35 @@ async function doCreateProduct() {
     return
   }
 
+  // Deshabilitar botón para evitar clicks múltiples
+  const createBtn = document.getElementById('npCreate')
+  if (createBtn) {
+    createBtn.disabled = true
+    createBtn.textContent = 'Creando...'
+  }
+
   const res = await state.backend.createProduct(name, desc, price, Math.round(stock), cat)
+  
+  // Rehabilitar botón
+  if (createBtn) {
+    createBtn.disabled = false
+    createBtn.textContent = 'Crear'
+  }
+
   if (!res || !res.ok) {
     if (err) { err.hidden = false; err.textContent = res?.error || 'No se pudo crear producto' }
     return
   }
 
+  // Cerrar modal INMEDIATAMENTE
   closeNewProductModal()
+  
+  // Mostrar confirmación clara
+  toast('✅ Producto creado exitosamente')
+  
+  // Actualizar listas
   await loadCategories()
   await searchProducts()
-  if (res.key) openModal(res.key)
-  toast('Producto creado')
 }
 
 async function doSetStock() {
@@ -615,10 +645,92 @@ async function doSetStock() {
   }
 
   const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
-  if (p) p.unidades = Number(res.unidades || p.unidades || 0)
-  openModal(key)
+  if (p) p.unidades = Number(res.unidades || 0)
+  
+  // Actualizar UI inmediatamente con el nuevo stock
+  const stockEl = document.getElementById('imStock')
+  const newStock = Number(res.unidades || 0)
+  const stockClass = newStock <= 0 ? 'stockBad' : (newStock <= 2 ? 'stockLow' : 'stockOk')
+  if (stockEl) {
+    stockEl.textContent = String(newStock)
+    stockEl.className = `stock ${stockClass}`
+  }
+  document.getElementById('imSetStock').value = String(newStock)
+  
   renderGrid()
   toast('Stock actualizado')
+}
+
+async function findDuplicates() {
+  if (!state.backend?.findDuplicates) {
+    toast('Función no disponible en modo escritorio')
+    return
+  }
+
+  const res = await state.backend.findDuplicates()
+  if (!res || !res.ok) {
+    toast('Error al buscar duplicados')
+    return
+  }
+
+  if (!res.duplicates || res.duplicates.length === 0) {
+    toast('✅ No se encontraron productos duplicados')
+    return
+  }
+
+  const count = res.duplicates.reduce((sum, d) => sum + (d.count - 1), 0)
+  const msg = `Se encontraron ${res.total} grupos de duplicados (${count} productos duplicados).\n\n¿Deseas eliminar los duplicados? Se mantendrá el primero de cada grupo.`
+  
+  if (confirm(msg)) {
+    await deleteDuplicates()
+  }
+}
+
+async function deleteDuplicates() {
+  if (!state.backend?.deleteDuplicates) {
+    toast('Función no disponible')
+    return
+  }
+
+  const res = await state.backend.deleteDuplicates(true)
+  if (!res || !res.ok) {
+    toast('Error al eliminar duplicados')
+    return
+  }
+
+  toast(`✅ Se eliminaron ${res.deleted} productos duplicados`)
+  await searchProducts()
+}
+
+async function doDeleteProduct() {
+  const key = state.currentKey
+  if (!key) return
+  if (!state.backend?.deleteProduct) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = 'Acción no disponible'
+    return
+  }
+
+  const name = String(document.getElementById('imTitle')?.textContent || 'Producto')
+  const confirmText = prompt(
+    `Eliminar ${name} del inventario.\n\nEscribe ELIMINAR para confirmar:`,
+    ''
+  )
+  if (!confirmText) return
+
+  const res = await state.backend.deleteProduct(key, confirmText)
+  if (!res || !res.ok) {
+    const err = document.getElementById('imError')
+    err.hidden = false
+    err.textContent = res?.error || 'No se pudo eliminar'
+    return
+  }
+
+  closeModal()
+  await loadCategories()
+  await searchProducts()
+  toast('Producto eliminado')
 }
 
 async function init() {
@@ -666,6 +778,9 @@ async function init() {
   const btnNewProduct = document.getElementById('btnNewProduct')
   if (btnNewProduct) btnNewProduct.addEventListener('click', openNewProductModal)
 
+  const btnCleanDuplicates = document.getElementById('cleanDuplicatesBtn')
+  if (btnCleanDuplicates) btnCleanDuplicates.addEventListener('click', findDuplicates)
+
   const btnExportExcel = document.getElementById('btnExportExcel')
   if (btnExportExcel) btnExportExcel.addEventListener('click', doExportExcel)
 
@@ -685,6 +800,9 @@ async function init() {
   document.getElementById('imSavePriceBtn').addEventListener('click', doSavePrice)
   document.getElementById('imPickImg').addEventListener('click', doPickImage)
   document.getElementById('imClearImg').addEventListener('click', doClearImage)
+
+  const del = document.getElementById('imDeleteProduct')
+  if (del) del.addEventListener('click', doDeleteProduct)
 
   document.getElementById('npCancel').addEventListener('click', closeNewProductModal)
   document.getElementById('npCreate').addEventListener('click', doCreateProduct)

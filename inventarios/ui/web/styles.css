@@ -145,7 +145,7 @@ body[data-page="inventory"] .shell{grid-template-columns: 1fr}
 
 .cashWrap{flex:1; min-height:0; padding:14px; overflow:auto}
 
-.summary2{flex:1; min-height:0; padding:14px; overflow:auto; display:flex; flex-direction:column; gap:12px}
+.summary2{flex:1; min-height:0; padding:14px; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; gap:12px}
 
 .layout{flex:1; min-height:0; display:grid; grid-template-columns: 1fr 420px; gap:12px; padding:12px}
 
@@ -235,6 +235,35 @@ body[data-page="inventory"] .shell{grid-template-columns: 1fr}
 .table tr td:last-child{border-right:1px solid var(--glassBorder); border-top-right-radius:14px; border-bottom-right-radius:14px}
 .right{text-align:right}
 
+/* Clickable rows (Summary: sales list) */
+.table tr.clickRow td{cursor:pointer}
+.table tr.clickRow:hover td{background:rgba(16,31,63,.78)}
+.table tr.selectedRow td{background:rgba(79,70,229,.22); border-top-color:rgba(79,70,229,.35); border-bottom-color:rgba(79,70,229,.35)}
+.table td.prodSum{color:var(--muted); font-size:12px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+/* Productos estrella con scroll horizontal */
+.topProductsList{display:flex; gap:12px; margin-top:10px; overflow-x:auto; overflow-y:hidden; padding-bottom:8px; scroll-snap-type:x mandatory; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.2) transparent}
+.topProductsList::-webkit-scrollbar{height:6px}
+.topProductsList::-webkit-scrollbar-track{background:transparent}
+.topProductsList::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2); border-radius:3px}
+.topProductsList::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.3)}
+.topProdItem{display:flex; flex-direction:column; gap:8px; padding:14px 16px; border:1px solid var(--border); background:rgba(255,255,255,.06); border-radius:14px; min-width:180px; scroll-snap-align:start; transition:all .2s ease}
+.topProdItem:hover{background:rgba(255,255,255,.09); transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.topProdRank{font-size:24px; font-weight:900; line-height:1}
+.topProdName{font-weight:700; font-size:14px; color:var(--text)}
+.topProdStats{color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:10px}
+
+/* Acordeón para secciones colapsables */
+.accordionCard{border:1px solid var(--glassBorder); border-radius:18px; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); overflow:hidden; -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur))}
+.accordionHeader{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; cursor:pointer; user-select:none; transition:background .2s ease}
+.accordionHeader:hover{background:rgba(255,255,255,.04)}
+.accordionTitle{font-weight:900; font-size:16px}
+.accordionIcon{font-size:18px; transition:transform .3s ease; color:var(--muted)}
+.accordionCard.expanded .accordionIcon{transform:rotate(180deg)}
+.accordionContent{max-height:0; overflow:hidden; transition:max-height .3s ease}
+.accordionCard.expanded .accordionContent{max-height:2000px}
+.accordionBody{padding:0 16px 16px 16px}
+
 .summary{flex:1; min-height:0; padding:12px; display:grid; grid-template-columns: 420px 1fr; gap:12px}
 .stack{display:flex; flex-direction:column; gap:12px}
 .kpi{border:1px solid var(--border); border-radius:18px; background:rgba(16,31,63,.65); padding:18px}
@@ -246,11 +275,12 @@ body[data-page="inventory"] .shell{grid-template-columns: 1fr}
 .toast{position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(15,27,52,.95); border:1px solid var(--border); padding:10px 12px; border-radius:14px; box-shadow:var(--shadow)}
 
 .modal{position:fixed; inset:0; background:rgba(0,0,0,.55); display:grid; place-items:center}
-.modalCard{width:min(560px, calc(100% - 24px)); background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04)); border:1px solid var(--glassBorder); border-radius:18px; padding:16px; box-shadow:var(--shadow); -webkit-backdrop-filter: blur(calc(var(--blur) + 6px)); backdrop-filter: blur(calc(var(--blur) + 6px))}
+.modalCard{width:min(560px, calc(100% - 24px)); max-height:calc(100vh - 48px); overflow-y:auto; background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04)); border:1px solid var(--glassBorder); border-radius:18px; padding:16px; box-shadow:var(--shadow); -webkit-backdrop-filter: blur(calc(var(--blur) + 6px)); backdrop-filter: blur(calc(var(--blur) + 6px))}
 .modalTitle{font-weight:1000; font-size:18px}
 .modalText{color:var(--muted); margin-top:8px; line-height:1.35}
 .modalInput{width:100%; margin-top:12px; padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:rgba(255,255,255,.06); color:var(--text)}
-.modalActions{display:flex; justify-content:flex-end; gap:10px; margin-top:12px}
+.modalActions{display:flex; justify-content:flex-end; flex-wrap:wrap; gap:10px; margin-top:12px}
+.modalActions .btn.danger{margin-right:auto}
 
 .productModalBody{display:flex; gap:12px; margin-top:12px; align-items:flex-start}
 .pmThumb{

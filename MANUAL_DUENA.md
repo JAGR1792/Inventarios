@@ -17,9 +17,9 @@ Rutas típicas:
 
 ## 2) Cómo poner una imagen a un producto (recomendado)
 
-La forma correcta (y más fácil) es desde la tienda:
+La forma correcta (y más fácil) es desde inventarios:
 
-1. Ve a **Tienda**.
+1. Ve a **INVENTARIO**.
 2. Busca el producto.
 3. Haz clic en el producto (se abre el modal).
 4. Pulsa **Cambiar imagen**.

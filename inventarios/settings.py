@@ -31,6 +31,14 @@ class Settings:
 
     # Images
     IMAGES_DIR: str = os.environ.get("IMAGES_DIR", "product_images")
+    
+    # Google Sheets integration (optional)
+    GOOGLE_SHEETS_ENABLED: bool = os.environ.get("GOOGLE_SHEETS_ENABLED", "false").lower() == "true"
+    GOOGLE_SHEETS_SPREADSHEET_ID: str = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID", "")
+    GOOGLE_SHEETS_WORKSHEET_NAME: str = os.environ.get("GOOGLE_SHEETS_WORKSHEET_NAME", "INVENTARIO")
+    GOOGLE_CREDENTIALS_FILE: str = os.environ.get("GOOGLE_CREDENTIALS_FILE", "credentials.json")
+    GOOGLE_TOKEN_FILE: str = os.environ.get("GOOGLE_TOKEN_FILE", "token.json")
+    GOOGLE_SHEETS_SYNC_INTERVAL_SECONDS: int = int(os.environ.get("GOOGLE_SHEETS_SYNC_INTERVAL_SECONDS", "300"))
 
     def _default_windows_instance_dir(self) -> Path:
         base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")

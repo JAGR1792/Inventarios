@@ -115,6 +115,21 @@ def create_app(session_factory, settings: Settings) -> Flask:
         limit = request.args.get("limit", "25")
         return _ok(backend.getSummary(int(limit)))
 
+    @app.get("/api/getSaleDetails")
+    def api_get_sale_details():
+        sale_id = request.args.get("id", "0")
+        return _ok(backend.getSaleDetails(sale_id))
+
+    @app.get("/api/findDuplicates")
+    def api_find_duplicates():
+        return _ok(backend.findDuplicates())
+
+    @app.post("/api/deleteDuplicates")
+    def api_delete_duplicates():
+        data = request.get_json(silent=True) or {}
+        keep_first = data.get("keep_first", True)
+        return _ok(backend.deleteDuplicates(keep_first=keep_first))
+
     @app.get("/api/listCashCloses")
     def api_list_cash_closes():
         limit = request.args.get("limit", "30")
@@ -177,6 +192,11 @@ def create_app(session_factory, settings: Settings) -> Flask:
     def api_set_product_stock():
         data = request.get_json(silent=True) or {}
         return _ok(backend.setProductStock(data.get("key"), data.get("stock"), data.get("notes", "")))
+
+    @app.post("/api/deleteProduct")
+    def api_delete_product():
+        data = request.get_json(silent=True) or {}
+        return _ok(backend.deleteProduct(data.get("key"), data.get("confirm_text", "")))
 
     @app.post("/api/setProductPrice")
     def api_set_product_price():

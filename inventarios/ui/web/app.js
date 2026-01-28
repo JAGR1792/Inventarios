@@ -1,5 +1,33 @@
 /* global */
 
+function toggleAccordion(id) {
+  const accordion = document.getElementById(id)
+  if (!accordion) return
+  accordion.classList.toggle('expanded')
+  
+  // Guardar estado en localStorage
+  try {
+    const key = `accordion_${id}`
+    const isExpanded = accordion.classList.contains('expanded')
+    localStorage.setItem(key, isExpanded ? '1' : '0')
+  } catch (e) { /* ignore */ }
+}
+
+function restoreAccordionStates() {
+  // Restaurar estados guardados de acordeones
+  const accordions = ['topProductsAccordion', 'salesAccordion', 'saleDetailAccordion', 'closesAccordion']
+  accordions.forEach(id => {
+    try {
+      const key = `accordion_${id}`
+      const saved = localStorage.getItem(key)
+      const accordion = document.getElementById(id)
+      if (accordion && saved === '0') {
+        accordion.classList.remove('expanded')
+      }
+    } catch (e) { /* ignore */ }
+  })
+}
+
 const state = {
   backend: null,
   products: [],
@@ -8,6 +36,7 @@ const state = {
   lastSearchQuery: '',
   categories: ['Todas'],
   currentProductKey: null,
+  selectedSaleId: null,
   ui: {
     tablet: false,
     lite: false,
@@ -854,16 +883,136 @@ async function refreshSummary() {
   const tbody = document.getElementById('salesRows')
   tbody.innerHTML = ''
   for (const row of (s.ultimas_ventas || [])) {
+    const saleId = Number(row.id || 0)
     const method = String(row.payment_method || 'cash')
+    const prodSummary = String(row.products_summary || '').trim() || '—'
     const tr = document.createElement('tr')
+    tr.className = 'clickRow'
+    tr.dataset.saleId = String(saleId || '')
     tr.innerHTML = `
+      <td><b>#${escapeHtml(String(saleId || ''))}</b></td>
       <td>${escapeHtml(row.created_at || '')}</td>
       <td>${escapeHtml(method)}</td>
       <td class="right"><b>$${fmtMoney(row.total || 0)}</b></td>
       <td class="right">${escapeHtml(row.items || 0)}</td>
+      <td class="prodSum">${escapeHtml(prodSummary)}</td>
     `
     tbody.appendChild(tr)
   }
+
+  // Click-to-view sale details (wire once).
+  if (!tbody._wiredSaleClick) {
+    tbody._wiredSaleClick = true
+    tbody.addEventListener('click', (e) => {
+      const tr = e.target?.closest?.('tr[data-sale-id]')
+      const sid = tr ? Number(tr.dataset.saleId || 0) : 0
+      if (!sid) return
+      showSaleDetails(sid)
+    })
+  }
+
+  // Render top products
+  const topProdsList = document.getElementById('topProductsList')
+  const topProdsHint = document.getElementById('topProductsHint')
+  if (topProdsList && topProdsHint) {
+    const topProds = s.top_productos || []
+    if (topProds.length === 0) {
+      topProdsHint.hidden = false
+      topProdsHint.textContent = 'No hay datos de ventas aún'
+      topProdsList.innerHTML = ''
+    } else {
+      topProdsHint.hidden = true
+      topProdsList.innerHTML = ''
+      let rank = 1
+      for (const tp of topProds.slice(0, 5)) {
+        const div = document.createElement('div')
+        div.className = 'topProdItem'
+        const emoji = rank === 1 ? '🏆' : (rank === 2 ? '🥈' : (rank === 3 ? '🥉' : '⭐'))
+        div.innerHTML = `
+          <div class="topProdRank">${emoji} #${rank}</div>
+          <div class="topProdName">${escapeHtml(tp.producto || '')}</div>
+          <div class="topProdStats">${escapeHtml(String(tp.qty || 0))} vendidos • $${fmtMoney(tp.total || 0)}</div>
+        `
+        topProdsList.appendChild(div)
+        rank++
+      }
+    }
+  }
+
+  // Restore selection after refresh.
+  if (state.selectedSaleId) {
+    const current = Number(state.selectedSaleId)
+    const has = Array.from(tbody.querySelectorAll('tr[data-sale-id]')).some((tr) => Number(tr.dataset.saleId || 0) === current)
+    if (has) showSaleDetails(current)
+  }
+}
+
+async function showSaleDetails(saleId) {
+  const title = document.getElementById('saleDetailTitle')
+  const hint = document.getElementById('saleDetailHint')
+  const wrap = document.getElementById('saleDetailWrap')
+  const rowsEl = document.getElementById('saleDetailRows')
+  const salesTbody = document.getElementById('salesRows')
+  if (!title || !hint || !wrap || !rowsEl || !salesTbody) return
+
+  const sid = Number(saleId || 0)
+  if (!sid) return
+  state.selectedSaleId = sid
+
+  // Highlight selection.
+  for (const tr of Array.from(salesTbody.querySelectorAll('tr[data-sale-id]'))) {
+    const isSel = Number(tr.dataset.saleId || 0) === sid
+    tr.classList.toggle('selectedRow', isSel)
+  }
+
+  if (!state.backend?.getSaleDetails) {
+    hint.hidden = false
+    hint.textContent = 'Detalle no disponible en este modo'
+    wrap.hidden = true
+    return
+  }
+
+  hint.hidden = false
+  hint.textContent = 'Cargando detalle…'
+  wrap.hidden = true
+  rowsEl.innerHTML = ''
+
+  let res
+  try {
+    res = await state.backend.getSaleDetails(sid)
+  } catch (e) {
+    res = null
+  }
+
+  if (!res || !res.ok || !res.sale) {
+    hint.hidden = false
+    hint.textContent = res?.error || 'No se pudo cargar el detalle'
+    wrap.hidden = true
+    title.textContent = 'Detalle de venta'
+    return
+  }
+
+  const sale = res.sale
+  const pm = String(sale.payment_method || 'cash')
+  title.textContent = `Venta #${sale.id} • ${sale.created_at || ''} • ${pm.toUpperCase()} • $${fmtMoney(sale.total || 0)}`
+
+  rowsEl.innerHTML = ''
+  for (const ln of (sale.lines || [])) {
+    const tr = document.createElement('tr')
+    const name = String(ln.producto || '')
+    const desc = String(ln.descripcion || '')
+    const label = desc ? `${name} • ${desc}` : name
+    tr.innerHTML = `
+      <td>${escapeHtml(label)}</td>
+      <td class="right">${escapeHtml(String(ln.qty || 0))}</td>
+      <td class="right">$${fmtMoney(ln.unit_price || 0)}</td>
+      <td class="right"><b>$${fmtMoney(ln.line_total || 0)}</b></td>
+    `
+    rowsEl.appendChild(tr)
+  }
+
+  hint.hidden = true
+  wrap.hidden = false
 }
 
 async function refreshCashCloses() {
@@ -1571,6 +1720,7 @@ function createHttpBackend(baseUrl) {
     checkout: (lines, payment) => httpJson('POST', '/api/checkout', { lines, payment }),
 
     getSummary: (limit) => httpJson('GET', `/api/getSummary?limit=${encodeURIComponent(String(limit ?? 25))}`),
+    getSaleDetails: (id) => httpJson('GET', `/api/getSaleDetails?id=${encodeURIComponent(String(id || 0))}`),
     listCashCloses: (limit) => httpJson('GET', `/api/listCashCloses?limit=${encodeURIComponent(String(limit ?? 30))}`),
     getCashPanel: (day) => httpJson('GET', `/api/getCashPanel?day=${encodeURIComponent(String(day || ''))}`),
 
@@ -1726,6 +1876,9 @@ function initHttpBackend() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // Restaurar estados de acordeones
+  restoreAccordionStates()
+  
   // pywebview path: may not be ready yet at DOMContentLoaded
   if (window.pywebview && window.pywebview.api) {
     initPyWebview()

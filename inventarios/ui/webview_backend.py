@@ -107,6 +107,23 @@ class WebviewBackend:
     def __init__(self, session_factory, settings: Settings):
         self._session_factory = session_factory
         self._settings = settings
+    
+    def _auto_export_to_sheets(self):
+        """Exporta autom\u00e1ticamente a Google Sheets en segundo plano."""
+        try:
+            from inventarios.google_sheets import GoogleSheetsSync
+            sync = GoogleSheetsSync()
+            
+            if sync.enabled:
+                with session_scope(self._session_factory) as session:
+                    repo = ProductRepo(session)
+                    products = repo.list(limit=9999)
+                
+                if products:
+                    sync.export_products(products)
+                    logger.info(f"\u2705 Auto-exportados {len(products)} productos a Google Sheets")
+        except Exception as e:
+            logger.warning(f"\u26a0\ufe0f  Error en auto-exportaci\u00f3n: {e}")
 
     def _excel_sync_path(self) -> Path:
         return (self._settings.INSTANCE_DIR / "excel_sync.json").resolve()
@@ -327,6 +344,9 @@ class WebviewBackend:
                 new_stock = repo.set_stock(key, stock=s, notes=notes)
             except Exception as e:
                 return {"ok": False, "error": str(e)}
+        
+        # Auto-exportar a Google Sheets
+        self._auto_export_to_sheets()
 
         return {"ok": True, "unidades": int(new_stock)}
 
@@ -337,6 +357,10 @@ class WebviewBackend:
                 price = repo.set_price(key, precio_final=Decimal(str(precio_final or 0)))
             except Exception as e:
                 return {"ok": False, "error": str(e)}
+        
+        # Auto-exportar a Google Sheets
+        self._auto_export_to_sheets()
+        
         return {"ok": True, "precio_final": float(price)}
 
     def createProduct(self, producto: str, descripcion: str = "", precio_final=None, unidades: int = 0, category: str = ""):
@@ -352,7 +376,56 @@ class WebviewBackend:
                 )
             except Exception as e:
                 return {"ok": False, "error": str(e)}
+        
+        # Auto-exportar a Google Sheets
+        self._auto_export_to_sheets()
+        
         return {"ok": True, "key": row.key}
+
+    def deleteProduct(self, key: str, confirm_text: str = ""):
+        k = (key or "").strip()
+        if not k:
+            return {"ok": False, "error": "Producto inválido"}
+
+        ct = (confirm_text or "").strip().upper()
+        if ct not in {"ELIMINAR", "BORRAR"}:
+            return {"ok": False, "error": "Confirmación inválida (escribe ELIMINAR)"}
+
+        with session_scope(self._session_factory) as session:
+            repo = ProductRepo(session)
+            try:
+                repo.delete_product(k)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        
+        # Auto-exportar a Google Sheets
+        self._auto_export_to_sheets()
+
+        return {"ok": True}
+
+    def findDuplicates(self) -> dict:
+        """Encuentra productos duplicados."""
+        try:
+            with session_scope(self._session_factory) as session:
+                products = ProductRepo(session)
+                duplicates = products.find_duplicate_products()
+                result = [
+                    {"base": base, "keys": keys, "count": len(keys)}
+                    for base, keys in duplicates
+                ]
+                return {"ok": True, "duplicates": result, "total": len(result)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def deleteDuplicates(self, keep_first: bool = True) -> dict:
+        """Elimina productos duplicados, manteniendo el primero de cada grupo."""
+        try:
+            with session_scope(self._session_factory) as session:
+                products = ProductRepo(session)
+                deleted = products.delete_duplicate_products(keep_first=keep_first)
+            return {"ok": True, "deleted": deleted}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def checkout(self, lines, payment=None):
         cart: dict[str, int] = {}
@@ -665,6 +738,9 @@ class WebviewBackend:
             if cash_counted_d is not None and (diff is None or diff == 0):
                 msg = "Todo cuadra. Mucha chamba por hoy, hora de dormir."
 
+            # Auto-exportar a Google Sheets al cerrar caja
+            self._auto_export_to_sheets()
+
             export_res = None
             try:
                 sync = self._load_excel_sync()
@@ -719,6 +795,7 @@ class WebviewBackend:
             sales = SalesRepo(session)
             total = sales.total_sold()
             last = sales.list_sales_summary(limit=lim)
+            top_products = sales.top_products(limit=5)
 
             out_last: list[dict] = []
             for row in last:
@@ -734,12 +811,102 @@ class WebviewBackend:
                         "total": float(row.get("total") or 0),
                         "items": int(row.get("items") or 0),
                         "payment_method": str(row.get("payment_method") or "cash"),
+                        "products_summary": str(row.get("products_summary") or ""),
                     }
                 )
 
-        return {"total_vendido": float(total), "ultimas_ventas": out_last}
+            top_prods: list[dict] = []
+            for tp in top_products:
+                top_prods.append(
+                    {
+                        "producto": tp.producto,
+                        "qty": int(tp.qty),
+                        "total": float(tp.total),
+                    }
+                )
+
+        return {"total_vendido": float(total), "ultimas_ventas": out_last, "top_productos": top_prods}
+
+    def getSaleDetails(self, sale_id):
+        try:
+            sid = int(sale_id)
+        except Exception:
+            sid = 0
+        if sid <= 0:
+            return {"ok": False, "error": "Venta inválida"}
+
+        with session_scope(self._session_factory) as session:
+            sale = session.get(Sale, sid)
+            if sale is None:
+                return {"ok": False, "error": "Venta no encontrada"}
+
+            lines = session.query(SaleLine).filter(SaleLine.sale_id == sid).order_by(SaleLine.id.asc()).all()
+            out_lines: list[dict] = []
+            items = 0
+            for ln in lines:
+                qty = int(getattr(ln, "qty", 0) or 0)
+                items += qty
+                out_lines.append(
+                    {
+                        "product_key": ln.product_key,
+                        "producto": ln.producto,
+                        "descripcion": ln.descripcion,
+                        "qty": qty,
+                        "unit_price": float(ln.unit_price or 0),
+                        "line_total": float(ln.line_total or 0),
+                    }
+                )
+
+            return {
+                "ok": True,
+                "sale": {
+                    "id": int(sale.id),
+                    "created_at": sale.created_at.strftime("%Y-%m-%d %H:%M"),
+                    "total": float(sale.total or 0),
+                    "payment_method": str(sale.payment_method or "cash"),
+                    "items": int(items),
+                    "lines": out_lines,
+                },
+            }
 
     def importExcel(self):
+        """Importar desde Google Sheets (o Excel como fallback)."""
+        try:
+            from inventarios.google_sheets import GoogleSheetsSync
+            from inventarios.excel_import import ImportedProduct
+            
+            sync = GoogleSheetsSync()
+            
+            # Intentar importar desde Google Sheets primero
+            if sync.enabled:
+                logger.info("Importando desde Google Sheets...")
+                products = sync.import_products()
+                
+                if products:
+                    # Convertir a ImportedProduct y actualizar base de datos
+                    imported = [
+                        ImportedProduct(
+                            key=p.key,
+                            producto=p.producto,
+                            descripcion=p.descripcion,
+                            unidades=p.unidades,
+                            precio_final=p.precio_final
+                        )
+                        for p in products
+                    ]
+                    
+                    with session_scope(self._session_factory) as session:
+                        repo = ProductRepo(session)
+                        count = repo.upsert_many(imported)
+                    
+                    return {"ok": True, "imported": len(products), "upserted": count, "source": "Google Sheets"}
+                else:
+                    return {"ok": False, "error": "No se encontraron productos en Google Sheets"}
+            
+        except Exception as e:
+            logger.warning(f"Error con Google Sheets, intentando Excel: {e}")
+        
+        # Fallback a Excel si Google Sheets no funciona
         try:
             file_name = _ask_open_filename("Importar desde Excel", [("Excel", "*.xlsx"), ("Todos", "*.*")])
         except Exception as e:
@@ -775,7 +942,7 @@ class WebviewBackend:
             except Exception:
                 pass
 
-            return {"ok": True, "imported": int(len(products)), "upserted": int(changed)}
+            return {"ok": True, "imported": int(len(products)), "upserted": int(changed), "source": "Excel"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -803,8 +970,35 @@ class WebviewBackend:
         return res
 
     def exportExcelToLast(self):
-        sync = self._load_excel_sync()
-        last_path = (sync.get("last_excel_path") or "").strip()
+        """Exportar a Google Sheets automáticamente (en tiempo real)."""
+        try:
+            from inventarios.google_sheets import GoogleSheetsSync
+            
+            sync = GoogleSheetsSync()
+            
+            # Intentar exportar a Google Sheets primero (tiempo real)
+            if sync.enabled:
+                logger.info("⏱ Exportando a Google Sheets en tiempo real...")
+                with session_scope(self._session_factory) as session:
+                    repo = ProductRepo(session)
+                    products = repo.list(limit=9999)
+                
+                if products:
+                    success = sync.export_products(products)
+                    if success:
+                        url = sync.get_spreadsheet_url()
+                        return {"ok": True, "exported": len(products), "url": url, "target": "Google Sheets"}
+                    else:
+                        return {"ok": False, "error": "Error exportando a Google Sheets"}
+                else:
+                    return {"ok": False, "error": "No hay productos para exportar"}
+            
+        except Exception as e:
+            logger.warning(f"Error con Google Sheets, intentando Excel: {e}")
+        
+        # Fallback a Excel
+        sync_data = self._load_excel_sync()
+        last_path = (sync_data.get("last_excel_path") or "").strip()
         if not last_path:
             return {
                 "ok": False,

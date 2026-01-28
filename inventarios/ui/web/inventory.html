@@ -48,6 +48,7 @@
                     <span>Categoría</span>
                     <select id="invCategory"></select>
                   </label>
+                  <button class="btn ghost" id="cleanDuplicatesBtn" type="button" title="Buscar y eliminar productos duplicados">🧹 Limpiar duplicados</button>
                 </div>
               </div>
             </div>
@@ -95,7 +96,7 @@
               <div class="closeGrid mt10">
                 <label class="field">
                   <span>Rellenar (+unidades)</span>
-                  <input id="imRestockQty" type="number" value="1" min="1" />
+                  <input id="imRestockQty" type="number" value="1" min="0" />
                 </label>
                 <button class="btn" id="imRestockBtn" type="button">Rellenar</button>
 
@@ -116,6 +117,7 @@
             <button class="btn" id="imSavePriceBtn" type="button">Guardar precio</button>
             <button class="btn" id="imPickImg" type="button">Cambiar imagen</button>
             <button class="btn ghost" id="imClearImg" type="button">Quitar imagen</button>
+            <button class="btn danger" id="imDeleteProduct" type="button" title="Elimina el producto del inventario">Eliminar producto</button>
           </div>
           <div class="error" id="imError" hidden></div>
         </div>

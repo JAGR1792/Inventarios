@@ -42,36 +42,88 @@
                 <div class="kpiValue" id="kpiTotal">$0,00</div>
               </div>
 
-              <div class="card">
-                <div class="cardTitle">Últimas ventas</div>
-                <div class="tableWrap">
-                  <table class="table">
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Método</th>
-                        <th class="right">Total</th>
-                        <th class="right">Items</th>
-                      </tr>
-                    </thead>
-                    <tbody id="salesRows"></tbody>
-                  </table>
+              <div class="accordionCard expanded" id="topProductsAccordion">
+                <div class="accordionHeader" onclick="toggleAccordion('topProductsAccordion')">
+                  <div class="accordionTitle">🏆 Productos estrella (más vendidos)</div>
+                  <div class="accordionIcon">▼</div>
+                </div>
+                <div class="accordionContent">
+                  <div class="accordionBody">
+                    <div class="hint mt0" id="topProductsHint">Cargando...</div>
+                    <div class="topProductsList" id="topProductsList"></div>
+                  </div>
                 </div>
               </div>
 
-              <div class="card">
-                <div class="cardTitle">Cierres guardados</div>
-                <div class="tableWrap">
-                  <table class="table">
-                    <thead>
-                      <tr>
-                        <th>Creado</th>
-                        <th>Día</th>
-                        <th class="right">Efectivo inicio</th>
-                        <th class="right">Retiros</th>
-                        <th class="right">Efectivo esperado</th>
-                        <th class="right">Apertura mañana</th>
-                      </tr>
+              <div class="accordionCard expanded" id="salesAccordion">
+                <div class="accordionHeader" onclick="toggleAccordion('salesAccordion')">
+                  <div class="accordionTitle">📋 Últimas ventas</div>
+                  <div class="accordionIcon">▼</div>
+                </div>
+                <div class="accordionContent">
+                  <div class="accordionBody">
+                    <div class="tableWrap">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Venta</th>
+                            <th>Fecha</th>
+                            <th>Método</th>
+                            <th class="right">Total</th>
+                            <th class="right">Items</th>
+                            <th>Productos</th>
+                          </tr>
+                        </thead>
+                        <tbody id="salesRows"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="accordionCard" id="saleDetailAccordion">
+                <div class="accordionHeader" onclick="toggleAccordion('saleDetailAccordion')">
+                  <div class="accordionTitle">🔍 Detalle de venta</div>
+                  <div class="accordionIcon">▼</div>
+                </div>
+                <div class="accordionContent">
+                  <div class="accordionBody">
+                    <div class="hint mt0" id="saleDetailHint">Selecciona una venta para ver qué se vendió.</div>
+                    <div class="tableWrap" id="saleDetailWrap" hidden>
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Producto</th>
+                            <th class="right">Cant.</th>
+                            <th class="right">Unit.</th>
+                            <th class="right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody id="saleDetailRows"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="accordionCard" id="closesAccordion">
+                <div class="accordionHeader" onclick="toggleAccordion('closesAccordion')">
+                  <div class="accordionTitle">💰 Cierres guardados</div>
+                  <div class="accordionIcon">▼</div>
+                </div>
+                <div class="accordionContent">
+                  <div class="accordionBody">
+                    <div class="tableWrap">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Creado</th>
+                            <th>Día</th>
+                            <th class="right">Efectivo inicio</th>
+                            <th class="right">Retiros</th>
+                            <th class="right">Efectivo esperado</th>
+                            <th class="right">Apertura mañana</th>
+                          </tr>
                     </thead>
                     <tbody id="closesRows"></tbody>
                   </table>

@@ -279,6 +279,62 @@ class ProductRepo:
         row.updated_at = datetime.utcnow()
         return price
 
+    def delete_product(self, product_key: str) -> bool:
+        k = (product_key or "").strip()
+        if not k:
+            raise RuntimeError("Producto inválido")
+
+        row = self.session.execute(select(Product).where(Product.key == k)).scalar_one_or_none()
+        if row is None:
+            raise RuntimeError("Producto no encontrado")
+
+        self.session.delete(row)
+        return True
+
+    def find_duplicate_products(self) -> list[tuple[str, list[str]]]:
+        """Encuentra productos con nombre+descripción idénticos y devuelve (base_name, [keys])."""
+        products = self.session.execute(select(Product)).scalars().all()
+        groups: dict[str, list[str]] = {}
+        
+        for p in products:
+            # Normalizar nombre base (sin el " - N" del sufijo de duplicados)
+            base = f"{p.producto} - {p.descripcion}".strip()
+            if base.endswith(" -"):
+                base = p.producto.strip()
+            
+            if base not in groups:
+                groups[base] = []
+            groups[base].append(p.key)
+        
+        # Solo devolver grupos con duplicados (más de 1 producto)
+        duplicates = [(base, keys) for base, keys in groups.items() if len(keys) > 1]
+        return duplicates
+
+    def delete_duplicate_products(self, keep_first: bool = True) -> int:
+        """Elimina productos duplicados. Si keep_first=True, mantiene el primero y elimina el resto."""
+        duplicates = self.find_duplicate_products()
+        deleted = 0
+        
+        for base, keys in duplicates:
+            # Ordenar keys alfabéticamente para consistencia
+            keys.sort()
+            
+            # Mantener el primero, eliminar el resto
+            to_delete = keys[1:] if keep_first else keys[:-1]
+            
+            for key in to_delete:
+                try:
+                    row = self.session.execute(
+                        select(Product).where(Product.key == key)
+                    ).scalar_one_or_none()
+                    if row:
+                        self.session.delete(row)
+                        deleted += 1
+                except Exception:
+                    pass  # Continuar con el siguiente
+        
+        return deleted
+
     def get_by_keys(self, keys: list[str]) -> dict[str, Product]:
         if not keys:
             return {}
@@ -390,6 +446,16 @@ class SalesRepo:
         rows = self.session.execute(stmt).all()
         out: list[dict] = []
         for sale_id, created_at, total, items, payment_method in rows:
+            # Fetch top 3 products for this sale
+            lines = (
+                self.session.query(SaleLine)
+                .filter(SaleLine.sale_id == sale_id)
+                .order_by(SaleLine.line_total.desc())
+                .limit(3)
+                .all()
+            )
+            products_summary = ", ".join([f"{ln.producto} x{ln.qty}" for ln in lines])
+            
             out.append(
                 {
                     "id": int(sale_id),
@@ -397,6 +463,7 @@ class SalesRepo:
                     "total": Decimal(str(total)).quantize(Decimal("0.01")),
                     "items": int(items),
                     "payment_method": str(payment_method or "cash"),
+                    "products_summary": products_summary,
                 }
             )
         return out

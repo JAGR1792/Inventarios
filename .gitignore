@@ -15,12 +15,27 @@ ENV/
 # Local env / secrets
 .env
 .env.*
+!.env.example
+
+# Google Cloud credentials (Service Account)
+KEY.json
+credentials.json
+token.json
+*-key.json
+service-account-*.json
 
 # Local app data (SQLite, caches, images)
 instance/
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 *.db
+price_cache.json
+
+# Excel files (local backups)
+*.xlsx
+!requirements*.txt
 
 # Build/packaging outputs (PyInstaller, etc.)
 build/
