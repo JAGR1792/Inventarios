@@ -65,5 +65,5 @@ REM Esperar un poco a que Flask arranque
 timeout /t 2 /nobreak >nul
 
 REM Abrir navegador
-start "" "http://%LOCAL_IP%:%PORT%"
+start "" "http://desktop-hjl8q77:8000/store.html"
 exit /b 0
