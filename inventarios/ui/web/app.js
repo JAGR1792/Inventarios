@@ -948,12 +948,11 @@ async function refreshSummary() {
 }
 
 async function showSaleDetails(saleId) {
-  const title = document.getElementById('saleDetailTitle')
-  const hint = document.getElementById('saleDetailHint')
-  const wrap = document.getElementById('saleDetailWrap')
-  const rowsEl = document.getElementById('saleDetailRows')
+  const modal = document.getElementById('saleDetailModal')
+  const modalTitle = document.getElementById('saleDetailModalTitle')
+  const rowsEl = document.getElementById('saleDetailModalRows')
   const salesTbody = document.getElementById('salesRows')
-  if (!title || !hint || !wrap || !rowsEl || !salesTbody) return
+  if (!modal || !modalTitle || !rowsEl || !salesTbody) return
 
   const sid = Number(saleId || 0)
   if (!sid) return
@@ -966,16 +965,12 @@ async function showSaleDetails(saleId) {
   }
 
   if (!state.backend?.getSaleDetails) {
-    hint.hidden = false
-    hint.textContent = 'Detalle no disponible en este modo'
-    wrap.hidden = true
+    alert('Detalle no disponible en este modo')
     return
   }
 
-  hint.hidden = false
-  hint.textContent = 'Cargando detalle…'
-  wrap.hidden = true
-  rowsEl.innerHTML = ''
+  rowsEl.innerHTML = '<tr><td colspan="4" style="text-align:center">Cargando...</td></tr>'
+  modal.hidden = false
 
   let res
   try {
@@ -985,16 +980,14 @@ async function showSaleDetails(saleId) {
   }
 
   if (!res || !res.ok || !res.sale) {
-    hint.hidden = false
-    hint.textContent = res?.error || 'No se pudo cargar el detalle'
-    wrap.hidden = true
-    title.textContent = 'Detalle de venta'
+    alert(res?.error || 'No se pudo cargar el detalle')
+    modal.hidden = true
     return
   }
 
   const sale = res.sale
   const pm = String(sale.payment_method || 'cash')
-  title.textContent = `Venta #${sale.id} • ${sale.created_at || ''} • ${pm.toUpperCase()} • $${fmtMoney(sale.total || 0)}`
+  modalTitle.textContent = `Venta #${sale.id} • ${sale.created_at || ''} • ${pm.toUpperCase()} • $${fmtMoney(sale.total || 0)}`
 
   rowsEl.innerHTML = ''
   for (const ln of (sale.lines || [])) {
@@ -1010,9 +1003,11 @@ async function showSaleDetails(saleId) {
     `
     rowsEl.appendChild(tr)
   }
+}
 
-  hint.hidden = true
-  wrap.hidden = false
+function closeSaleDetailModal() {
+  const modal = document.getElementById('saleDetailModal')
+  if (modal) modal.hidden = true
 }
 
 async function refreshCashCloses() {
@@ -1878,6 +1873,12 @@ function initHttpBackend() {
 window.addEventListener('DOMContentLoaded', () => {
   // Restaurar estados de acordeones
   restoreAccordionStates()
+  
+  // Event listener para cerrar modal de detalle de venta
+  const btnCloseSaleDetail = document.getElementById('btnCloseSaleDetail')
+  if (btnCloseSaleDetail) {
+    btnCloseSaleDetail.addEventListener('click', closeSaleDetailModal)
+  }
   
   // pywebview path: may not be ready yet at DOMContentLoaded
   if (window.pywebview && window.pywebview.api) {

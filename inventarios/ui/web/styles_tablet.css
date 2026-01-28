@@ -391,3 +391,68 @@ html[data-lite="1"] .grid{
 @media (prefers-reduced-motion: reduce) {
   *{scroll-behavior:auto}
 }
+/* Mejoras para modales en tablet */
+@media (pointer: coarse), (max-width: 900px) {
+  .modalCard {
+    max-width: 95vw;
+    max-height: 90vh;
+    padding: 20px;
+  }
+
+  .modalTitle {
+    font-size: 20px;
+    margin-bottom: 16px;
+  }
+
+  .modalActions {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .modalActions .btn {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  /* Acordeones más espaciados en tablet */
+  .accordionCard {
+    margin-bottom: 16px;
+  }
+
+  .accordionHeader {
+    padding: 18px 20px;
+    min-height: 60px;
+  }
+
+  .accordionTitle {
+    font-size: 18px;
+  }
+
+  .accordionContent.expanded {
+    max-height: 500px;
+  }
+
+  .accordionBody {
+    padding: 16px 20px 20px 20px;
+  }
+
+  /* Tablas más legibles en tablet */
+  .table th,
+  .table td {
+    padding: 12px 8px;
+    font-size: 15px;
+  }
+
+  /* Tarjetas de productos más grandes */
+  .cardP {
+    min-height: 120px;
+    padding: 14px;
+  }
+
+  /* Mejor scroll en listas largas */
+  .topProductsList,
+  .accordionContent,
+  .tableWrap {
+    -webkit-overflow-scrolling: touch;
+  }
+}

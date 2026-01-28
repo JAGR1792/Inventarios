@@ -424,7 +424,7 @@ async function doSaveCategory() {
   if (p) p.category = cat
   await loadCategories()
   renderGrid()
-  toast('Categoría guardada')
+  alert('Categoría actualizada')
 }
 
 async function doSavePrice() {
@@ -449,7 +449,7 @@ async function doSavePrice() {
   if (p) p.precio_final = Number(res.precio_final ?? price)
   openModal(key)
   renderGrid()
-  toast('Precio actualizado')
+  alert('Precio actualizado correctamente')
 }
 
 async function doSaveInfo() {
@@ -481,7 +481,7 @@ async function doSaveInfo() {
   if (p) { p.producto = name; p.descripcion = desc }
   openModal(key)
   renderGrid()
-  toast('Producto actualizado')
+  alert('Información del producto actualizada')
 }
 
 async function doExportExcel() {
@@ -490,11 +490,65 @@ async function doExportExcel() {
   // Tablet-friendly: export to the last configured file.
   if (state.backend.exportExcelToLast) {
     const res = await state.backend.exportExcelToLast()
-    if (res && res.ok) return toast(`Excel actualizado (${res.written || 0} filas)`)
+    if (res && res.ok) {
+      const msg = res.target === 'Google Sheets' 
+        ? `Exportado a Google Sheets (${res.exported || 0} productos)`
+        : `Excel actualizado (${res.written || 0} filas)`
+      return toast(msg)
+    }
     return toast(res?.error || 'Export falló')
   }
 
   return toast('Export no disponible')
+}
+
+async function doImportExcel() {
+  if (!state.backend || !state.backend.importExcel) return
+
+  const confirmed = confirm('¿Importar productos desde Google Sheets?\n\nEsto actualizará tu inventario local.')
+  if (!confirmed) return
+
+  toast('Importando...')
+  
+  const res = await state.backend.importExcel()
+  if (res && res.ok) {
+    toast(`Importados ${res.imported || 0} productos desde ${res.source || 'Google Sheets'}`)
+    // Recargar inventario
+    await init()
+  } else {
+    toast(res?.error || 'Error al importar')
+  }
+}
+
+async function doSyncSheets() {
+  if (!state.backend) return
+
+  const confirmed = confirm('Sincronizar con Google Sheets\n\n1. Importará productos desde la nube\n2. Exportará tu inventario actual\n\n¿Continuar?')
+  if (!confirmed) return
+
+  toast('Sincronizando...')
+
+  // 1. Importar primero
+  if (state.backend.importExcel) {
+    const importRes = await state.backend.importExcel()
+    if (importRes && importRes.ok) {
+      toast(`Importados ${importRes.imported || 0} productos`)
+      await init() // Recargar inventario
+    } else {
+      toast('Error al importar: ' + (importRes?.error || 'desconocido'))
+      return
+    }
+  }
+
+  // 2. Exportar después
+  if (state.backend.exportExcelToLast) {
+    const exportRes = await state.backend.exportExcelToLast()
+    if (exportRes && exportRes.ok) {
+      toast(`Sincronizado: ${exportRes.exported || 0} productos exportados`)
+    } else {
+      toast('Error al exportar: ' + (exportRes?.error || 'desconocido'))
+    }
+  }
 }
 
 async function doPickImage() {
@@ -623,7 +677,7 @@ async function doCreateProduct() {
   closeNewProductModal()
   
   // Mostrar confirmación clara
-  toast('✅ Producto creado exitosamente')
+  alert('✅ Producto creado exitosamente')
   
   // Actualizar listas
   await loadCategories()
@@ -674,7 +728,7 @@ async function findDuplicates() {
   }
 
   if (!res.duplicates || res.duplicates.length === 0) {
-    toast('✅ No se encontraron productos duplicados')
+    alert('✅ No se encontraron productos duplicados')
     return
   }
 
@@ -698,7 +752,7 @@ async function deleteDuplicates() {
     return
   }
 
-  toast(`✅ Se eliminaron ${res.deleted} productos duplicados`)
+  alert(`Eliminados ${res.deleted} productos duplicados`)
   await searchProducts()
 }
 
@@ -730,7 +784,7 @@ async function doDeleteProduct() {
   closeModal()
   await loadCategories()
   await searchProducts()
-  toast('Producto eliminado')
+  alert('Producto eliminado correctamente')
 }
 
 async function init() {
@@ -780,6 +834,12 @@ async function init() {
 
   const btnCleanDuplicates = document.getElementById('cleanDuplicatesBtn')
   if (btnCleanDuplicates) btnCleanDuplicates.addEventListener('click', findDuplicates)
+
+  const btnSyncSheets = document.getElementById('btnSyncSheets')
+  if (btnSyncSheets) btnSyncSheets.addEventListener('click', doSyncSheets)
+
+  const btnImportExcel = document.getElementById('btnImportExcel')
+  if (btnImportExcel) btnImportExcel.addEventListener('click', doImportExcel)
 
   const btnExportExcel = document.getElementById('btnExportExcel')
   if (btnExportExcel) btnExportExcel.addEventListener('click', doExportExcel)

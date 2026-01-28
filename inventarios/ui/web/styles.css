@@ -254,14 +254,41 @@ body[data-page="inventory"] .shell{grid-template-columns: 1fr}
 .topProdStats{color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:10px}
 
 /* Acordeón para secciones colapsables */
-.accordionCard{border:1px solid var(--glassBorder); border-radius:18px; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); overflow:hidden; -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur))}
-.accordionHeader{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; cursor:pointer; user-select:none; transition:background .2s ease}
+.accordionCard{
+  border:1px solid var(--glassBorder); 
+  border-radius:18px; 
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); 
+  overflow:hidden; 
+  margin-bottom:12px;
+  -webkit-backdrop-filter: blur(var(--blur)); 
+  backdrop-filter: blur(var(--blur))
+}
+.accordionHeader{
+  display:flex; 
+  align-items:center; 
+  justify-content:space-between; 
+  padding:14px 16px; 
+  cursor:pointer; 
+  user-select:none; 
+  transition:background .2s ease
+}
 .accordionHeader:hover{background:rgba(255,255,255,.04)}
 .accordionTitle{font-weight:900; font-size:16px}
 .accordionIcon{font-size:18px; transition:transform .3s ease; color:var(--muted)}
 .accordionCard.expanded .accordionIcon{transform:rotate(180deg)}
-.accordionContent{max-height:0; overflow:hidden; transition:max-height .3s ease}
-.accordionCard.expanded .accordionContent{max-height:2000px}
+.accordionContent{
+  max-height:0; 
+  overflow:hidden; 
+  transition:max-height .3s ease
+}
+.accordionCard.expanded .accordionContent{
+  max-height:450px; 
+  overflow-y:auto;
+}
+.accordionContent::-webkit-scrollbar{width:8px}
+.accordionContent::-webkit-scrollbar-track{background:rgba(255,255,255,.05); border-radius:4px}
+.accordionContent::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15); border-radius:4px}
+.accordionContent::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.25)}
 .accordionBody{padding:0 16px 16px 16px}
 
 .summary{flex:1; min-height:0; padding:12px; display:grid; grid-template-columns: 420px 1fr; gap:12px}

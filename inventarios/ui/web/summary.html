@@ -57,7 +57,7 @@
 
               <div class="accordionCard expanded" id="salesAccordion">
                 <div class="accordionHeader" onclick="toggleAccordion('salesAccordion')">
-                  <div class="accordionTitle">📋 Últimas ventas</div>
+                  <div class="accordionTitle">Últimas ventas</div>
                   <div class="accordionIcon">▼</div>
                 </div>
                 <div class="accordionContent">
@@ -81,34 +81,9 @@
                 </div>
               </div>
 
-              <div class="accordionCard" id="saleDetailAccordion">
-                <div class="accordionHeader" onclick="toggleAccordion('saleDetailAccordion')">
-                  <div class="accordionTitle">🔍 Detalle de venta</div>
-                  <div class="accordionIcon">▼</div>
-                </div>
-                <div class="accordionContent">
-                  <div class="accordionBody">
-                    <div class="hint mt0" id="saleDetailHint">Selecciona una venta para ver qué se vendió.</div>
-                    <div class="tableWrap" id="saleDetailWrap" hidden>
-                      <table class="table">
-                        <thead>
-                          <tr>
-                            <th>Producto</th>
-                            <th class="right">Cant.</th>
-                            <th class="right">Unit.</th>
-                            <th class="right">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody id="saleDetailRows"></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <div class="accordionCard" id="closesAccordion">
                 <div class="accordionHeader" onclick="toggleAccordion('closesAccordion')">
-                  <div class="accordionTitle">💰 Cierres guardados</div>
+                  <div class="accordionTitle">Cierres guardados</div>
                   <div class="accordionIcon">▼</div>
                 </div>
                 <div class="accordionContent">
@@ -148,6 +123,31 @@
       </main>
 
       <div class="toast" id="toast" hidden></div>
+
+      <!-- Modal para detalle de venta -->
+      <div class="modal" id="saleDetailModal" hidden>
+        <div class="modalCard">
+          <div class="modalTitle" id="saleDetailModalTitle">Detalle de venta</div>
+          <div class="modalText">
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th class="right">Cant.</th>
+                    <th class="right">Unit.</th>
+                    <th class="right">Total</th>
+                  </tr>
+                </thead>
+                <tbody id="saleDetailModalRows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modalActions">
+            <button class="btn" id="btnCloseSaleDetail">Cerrar</button>
+          </div>
+        </div>
+      </div>
 
       <div class="modal" id="modal" hidden>
         <div class="modalCard">
