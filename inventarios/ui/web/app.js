@@ -1211,16 +1211,6 @@ async function closeCashDay(force = false) {
   }
   toast('Cierre guardado')
 
-  // If server auto-exported to Excel on close, surface it.
-  try {
-    const ex = res && res.excel_export
-    if (ex && ex.ok) {
-      toast(`Excel actualizado (${ex.written || 0} filas)`) 
-    } else if (ex && ex.ok === false) {
-      toast(ex.error || 'Excel: no se pudo exportar')
-    }
-  } catch (e) { /* ignore */ }
-
   refreshCashPanel()
   refreshCashCloses()
   closeCashCloseModal()
@@ -1400,26 +1390,7 @@ async function confirmReset() {
 async function doImport() {
   if (!state.backend) return
 
-  // Web mode (tablet): upload xlsx
-  if (state.backend.importExcelUpload) {
-    const file = await pickFile('.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    if (!file) return
-    const res = await state.backend.importExcelUpload(file)
-    if (!res || !res.ok) {
-      toast(res?.error || 'Import falló')
-      return
-    }
-    toast(`Importado ${res.imported} • Actualizados ${res.upserted}`)
-    if (document.getElementById('storeCategory')) await loadCategories()
-    if (document.getElementById('storeGrid')) {
-      const ss = document.getElementById('storeSearch')
-      await searchProducts(ss ? (ss.value || '') : '', 'store')
-    }
-    if (document.getElementById('cashDay')) refreshCashPanel()
-    return
-  }
-
-  const res = await state.backend.importExcel()
+  const res = await state.backend.importGoogleSheets()
   if (!res || !res.ok) {
     toast(res?.error || 'Import falló')
     return
@@ -1498,11 +1469,11 @@ function setupHandlers() {
   if (btnCancel) btnCancel.addEventListener('click', closeResetModal)
   if (btnConfirm) btnConfirm.addEventListener('click', confirmReset)
 
-  const btnImport = document.getElementById('btnImport')
-  if (btnImport) btnImport.addEventListener('click', doImport)
+  const btnImportSheets = document.getElementById('btnImportSheets')
+  if (btnImportSheets) btnImportSheets.addEventListener('click', doImport)
 
-  const btnExport = document.getElementById('btnExportExcel')
-  if (btnExport) btnExport.addEventListener('click', doExportExcel)
+  const btnExportSheets = document.getElementById('btnExportSheets')
+  if (btnExportSheets) btnExportSheets.addEventListener('click', doExportGoogleSheets)
 
   const btnOpenImages = document.getElementById('btnOpenImages')
   if (btnOpenImages) {
@@ -1725,8 +1696,8 @@ function createHttpBackend(baseUrl) {
     deleteCashMove: (id) => httpJson('POST', '/api/deleteCashMove', { id }),
     closeCashDay: (day, cash_counted, notes, force) => httpJson('POST', '/api/closeCashDay', { day, cash_counted, notes, force }),
 
-    exportExcelSelect: () => httpJson('POST', '/api/exportExcelSelect', {}),
-    exportExcelToLast: () => httpJson('POST', '/api/exportExcelToLast', {}),
+    exportGoogleSheets: () => httpJson('POST', '/api/exportGoogleSheets', {}),
+    importGoogleSheets: () => httpJson('POST', '/api/importGoogleSheets', {}),
 
     setProductCategory: (key, category) => httpJson('POST', '/api/setProductCategory', { key, category }),
     clearProductImage: (key) => httpJson('POST', '/api/clearProductImage', { key }),
@@ -1742,21 +1713,15 @@ function createHttpBackend(baseUrl) {
       return httpUpload('/api/uploadProductImage', fd)
     },
 
-    importExcelUpload: async (file) => {
-      const fd = new FormData()
-      fd.append('file', file)
-      return httpUpload('/api/importExcelUpload', fd)
-    },
   }
 }
 
-async function doExportExcel() {
+async function doExportGoogleSheets() {
   if (!state.backend) return
   try {
-    // Prefer exporting to the last configured file (tablet-friendly).
-    if (state.backend.exportExcelToLast) {
-      const res = await state.backend.exportExcelToLast()
-      if (res && res.ok) return toast(`Excel actualizado (${res.written || 0} filas)`)
+    if (state.backend.exportGoogleSheets) {
+      const res = await state.backend.exportGoogleSheets()
+      if (res && res.ok) return toast(`Exportado ${res.exported || 0} productos a Google Sheets`)
       return toast(res?.error || 'Export falló')
     }
 

@@ -18,6 +18,7 @@ from inventarios.google_sheets import GoogleSheetsSync, GOOGLE_SHEETS_AVAILABLE
 from inventarios.settings import Settings
 from inventarios.db import create_engine_from_url, make_session_factory, session_scope, init_db
 from inventarios.repos import ProductRepo
+from inventarios.tipos_importacion import ProductoImportado
 
 
 def main():
@@ -166,10 +167,8 @@ def main():
             if respuesta == "s":
                 with session_scope(factory) as session:
                     repo = ProductRepo(session)
-                    # Convertir SheetProduct a ImportedProduct
-                    from inventarios.excel_import import ImportedProduct
                     imported = [
-                        ImportedProduct(
+                        ProductoImportado(
                             key=p.key,
                             producto=p.producto,
                             descripcion=p.descripcion,

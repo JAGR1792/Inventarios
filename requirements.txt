@@ -1,9 +1,5 @@
 python-dotenv==1.0.1
 SQLAlchemy==2.0.46
-openpyxl==3.1.2
-
-# Optional (Windows): enables LOCAL_EXCEL_ENGINE=excel
-pywin32==311
 
 # Desktop UI (Windows): Edge WebView2 via pywebview
 pywebview==6.1

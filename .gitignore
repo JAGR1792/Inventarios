@@ -33,7 +33,7 @@ instance/
 *.db
 price_cache.json
 
-# Excel files (local backups)
+# Spreadsheet files (local backups)
 *.xlsx
 !requirements*.txt
 

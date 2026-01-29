@@ -136,8 +136,9 @@ function createHttpBackend(baseUrl) {
     setProductPrice: (key, precio_final) => httpJson('POST', '/api/setProductPrice', { key, precio_final }),
     clearProductImage: (key) => httpJson('POST', '/api/clearProductImage', { key }),
     openImagesFolder: () => httpJson('POST', '/api/openImagesFolder', {}),
-    exportExcelSelect: () => httpJson('POST', '/api/exportExcelSelect', {}),
-    exportExcelToLast: () => httpJson('POST', '/api/exportExcelToLast', {}),
+    exportGoogleSheets: () => httpJson('POST', '/api/exportGoogleSheets', {}),
+    importGoogleSheets: () => httpJson('POST', '/api/importGoogleSheets', {}),
+    syncGoogleSheets: () => httpJson('POST', '/api/syncGoogleSheets', {}),
     createProduct: (producto, descripcion, precio_final, unidades, category) => httpJson('POST', '/api/createProduct', { producto, descripcion, precio_final, unidades, category }),
     uploadProductImage: async (key, file) => {
       const fd = new FormData()
@@ -484,39 +485,45 @@ async function doSaveInfo() {
   alert('Información del producto actualizada')
 }
 
-async function doExportExcel() {
+async function doExportGoogleSheets() {
   if (!state.backend) return
 
-  // Tablet-friendly: export to the last configured file.
-  if (state.backend.exportExcelToLast) {
-    const res = await state.backend.exportExcelToLast()
+  toast('Exportando a Google Sheets...')
+  
+  try {
+    const res = await state.backend.exportGoogleSheets()
     if (res && res.ok) {
-      const msg = res.target === 'Google Sheets' 
-        ? `Exportado a Google Sheets (${res.exported || 0} productos)`
-        : `Excel actualizado (${res.written || 0} filas)`
-      return toast(msg)
+      const count = res.exported || res.written || 0
+      alert(`Exportado exitosamente\n\n${count} productos guardados en Google Sheets`)
+      return
     }
-    return toast(res?.error || 'Export falló')
+    alert('Error al exportar: ' + (res?.error || 'Error desconocido'))
+  } catch (e) {
+    alert('Error al exportar: ' + (e?.message || e))
   }
-
-  return toast('Export no disponible')
 }
 
-async function doImportExcel() {
-  if (!state.backend || !state.backend.importExcel) return
+async function doImportGoogleSheets() {
+  if (!state.backend || !state.backend.importGoogleSheets) {
+    alert('Función no disponible')
+    return
+  }
 
   const confirmed = confirm('¿Importar productos desde Google Sheets?\n\nEsto actualizará tu inventario local.')
   if (!confirmed) return
 
-  toast('Importando...')
+  toast('Importando desde Google Sheets...')
   
-  const res = await state.backend.importExcel()
-  if (res && res.ok) {
-    toast(`Importados ${res.imported || 0} productos desde ${res.source || 'Google Sheets'}`)
-    // Recargar inventario
-    await init()
-  } else {
-    toast(res?.error || 'Error al importar')
+  try {
+    const res = await state.backend.importGoogleSheets()
+    if (res && res.ok) {
+      alert(`Importación exitosa\n\n${res.imported || 0} productos importados desde ${res.source || 'Google Sheets'}`)
+      await searchProducts()
+    } else {
+      alert('Error al importar: ' + (res?.error || 'Error desconocido'))
+    }
+  } catch (e) {
+    alert('Error al importar: ' + (e?.message || e))
   }
 }
 
@@ -526,28 +533,38 @@ async function doSyncSheets() {
   const confirmed = confirm('Sincronizar con Google Sheets\n\n1. Importará productos desde la nube\n2. Exportará tu inventario actual\n\n¿Continuar?')
   if (!confirmed) return
 
-  toast('Sincronizando...')
+  toast('Sincronizando con Google Sheets...')
 
-  // 1. Importar primero
-  if (state.backend.importExcel) {
-    const importRes = await state.backend.importExcel()
-    if (importRes && importRes.ok) {
-      toast(`Importados ${importRes.imported || 0} productos`)
-      await init() // Recargar inventario
-    } else {
-      toast('Error al importar: ' + (importRes?.error || 'desconocido'))
+  try {
+    // Usar endpoint de sincronización si existe
+    if (state.backend.syncGoogleSheets) {
+      const res = await state.backend.syncGoogleSheets()
+      if (res && res.ok) {
+        alert(`Sincronización exitosa\n\nImportados: ${res.imported || 0} productos\nExportados: ${res.exported || 0} productos`)
+        await searchProducts()
+        return
+      }
+      alert('Error en sincronización: ' + (res?.error || 'Error desconocido'))
       return
     }
-  }
 
-  // 2. Exportar después
-  if (state.backend.exportExcelToLast) {
-    const exportRes = await state.backend.exportExcelToLast()
-    if (exportRes && exportRes.ok) {
-      toast(`Sincronizado: ${exportRes.exported || 0} productos exportados`)
-    } else {
-      toast('Error al exportar: ' + (exportRes?.error || 'desconocido'))
+    // Fallback: importar y exportar por separado
+    const importRes = await state.backend.importGoogleSheets()
+    if (!importRes || !importRes.ok) {
+      alert('Error al importar: ' + (importRes?.error || 'Error desconocido'))
+      return
     }
+    
+    await searchProducts()
+    
+    const exportRes = await state.backend.exportGoogleSheets()
+    if (exportRes && exportRes.ok) {
+      alert(`Sincronización exitosa\n\nImportados: ${importRes.imported || 0} productos\nExportados: ${exportRes.exported || 0} productos`)
+    } else {
+      alert('Importación exitosa, pero hubo error al exportar: ' + (exportRes?.error || 'Error desconocido'))
+    }
+  } catch (e) {
+    alert('Error en sincronización: ' + (e?.message || e))
   }
 }
 
@@ -742,49 +759,100 @@ async function findDuplicates() {
 
 async function deleteDuplicates() {
   if (!state.backend?.deleteDuplicates) {
-    toast('Función no disponible')
+    alert('Función no disponible')
     return
   }
 
-  const res = await state.backend.deleteDuplicates(true)
-  if (!res || !res.ok) {
-    toast('Error al eliminar duplicados')
-    return
-  }
+  toast('Eliminando duplicados...')
+  
+  try {
+    const res = await state.backend.deleteDuplicates(true)
+    if (!res || !res.ok) {
+      alert('Error al eliminar duplicados: ' + (res?.error || 'Error desconocido'))
+      return
+    }
 
-  alert(`Eliminados ${res.deleted} productos duplicados`)
-  await searchProducts()
+    alert(`Eliminados ${res.deleted} productos duplicados`)
+    await searchProducts()
+  } catch (e) {
+    alert('Error al eliminar duplicados: ' + (e?.message || e))
+  }
+}
+
+async function doCleanDuplicates() {
+  if (!state.backend) return
+  
+  // Primero buscar cuántos duplicados hay
+  toast('Buscando duplicados...')
+  
+  try {
+    let res
+    if (state.backend.findDuplicates) {
+      res = await state.backend.findDuplicates()
+    } else {
+      // Fallback: usar el endpoint directo
+      res = await fetch('/api/findDuplicates').then(r => r.json())
+    }
+    
+    if (!res || !res.ok) {
+      alert('Error al buscar duplicados: ' + (res?.error || 'Error desconocido'))
+      return
+    }
+    
+    const total = res.total || 0
+    if (total === 0) {
+      alert('No se encontraron productos duplicados')
+      return
+    }
+    
+    const confirmed = confirm(
+      `Se encontraron ${total} grupos de productos duplicados.\n\n` +
+      `Se conservará el primero de cada grupo y se eliminarán los demás.\n\n` +
+      `¿Deseas continuar?`
+    )
+    
+    if (!confirmed) return
+    
+    toast('Eliminando duplicados...')
+    await deleteDuplicates()
+    
+  } catch (e) {
+    alert('Error: ' + (e?.message || e))
+  }
 }
 
 async function doDeleteProduct() {
   const key = state.currentKey
   if (!key) return
   if (!state.backend?.deleteProduct) {
-    const err = document.getElementById('imError')
-    err.hidden = false
-    err.textContent = 'Acción no disponible'
+    alert('Función de eliminar no disponible')
     return
   }
 
   const name = String(document.getElementById('imTitle')?.textContent || 'Producto')
   const confirmText = prompt(
-    `Eliminar ${name} del inventario.\n\nEscribe ELIMINAR para confirmar:`,
+    `Eliminar "${name}" del inventario.\n\nEscribe ELIMINAR para confirmar:`,
     ''
   )
   if (!confirmText) return
 
-  const res = await state.backend.deleteProduct(key, confirmText)
-  if (!res || !res.ok) {
-    const err = document.getElementById('imError')
-    err.hidden = false
-    err.textContent = res?.error || 'No se pudo eliminar'
-    return
-  }
+  // Mostrar que está procesando
+  toast('Eliminando producto...')
+  
+  try {
+    const res = await state.backend.deleteProduct(key, confirmText)
+    if (!res || !res.ok) {
+      alert('Error: ' + (res?.error || 'No se pudo eliminar el producto'))
+      return
+    }
 
-  closeModal()
-  await loadCategories()
-  await searchProducts()
-  alert('Producto eliminado correctamente')
+    closeModal()
+    await loadCategories()
+    await searchProducts()
+    alert(`Producto "${name}" eliminado correctamente`)
+  } catch (e) {
+    alert('Error al eliminar: ' + (e?.message || e))
+  }
 }
 
 async function init() {
@@ -832,17 +900,17 @@ async function init() {
   const btnNewProduct = document.getElementById('btnNewProduct')
   if (btnNewProduct) btnNewProduct.addEventListener('click', openNewProductModal)
 
-  const btnCleanDuplicates = document.getElementById('cleanDuplicatesBtn')
-  if (btnCleanDuplicates) btnCleanDuplicates.addEventListener('click', findDuplicates)
-
   const btnSyncSheets = document.getElementById('btnSyncSheets')
   if (btnSyncSheets) btnSyncSheets.addEventListener('click', doSyncSheets)
 
-  const btnImportExcel = document.getElementById('btnImportExcel')
-  if (btnImportExcel) btnImportExcel.addEventListener('click', doImportExcel)
+  const btnImportSheets = document.getElementById('btnImportSheets')
+  if (btnImportSheets) btnImportSheets.addEventListener('click', doImportGoogleSheets)
 
-  const btnExportExcel = document.getElementById('btnExportExcel')
-  if (btnExportExcel) btnExportExcel.addEventListener('click', doExportExcel)
+  const btnExportSheets = document.getElementById('btnExportSheets')
+  if (btnExportSheets) btnExportSheets.addEventListener('click', doExportGoogleSheets)
+
+  const btnCleanDuplicates = document.getElementById('btnCleanDuplicates')
+  if (btnCleanDuplicates) btnCleanDuplicates.addEventListener('click', doCleanDuplicates)
 
   const grid = document.getElementById('invGrid')
   if (grid) grid.addEventListener('click', (e) => {

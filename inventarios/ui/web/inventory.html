@@ -27,12 +27,13 @@
         </nav>
 
         <div class="actions">
-          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imágenes</button>
+          <button class="btn ghost" id="btnOpenImages" title="Abrir carpeta donde se guardan las fotos">Imagenes</button>
           <button class="btn primary" id="btnSyncSheets" title="Sincronizar con Google Sheets (Importar + Exportar)">Sincronizar</button>
-          <button class="btn" id="btnImportExcel" title="Importar productos desde Google Sheets">Importar</button>
-          <button class="btn" id="btnExportExcel" title="Exportar inventario a Google Sheets">Exportar</button>
+          <button class="btn" id="btnImportSheets" title="Importar productos desde Google Sheets">Importar</button>
+          <button class="btn" id="btnExportSheets" title="Exportar inventario a Google Sheets">Exportar</button>
           <button class="btn" id="btnNewProduct" title="Crear un nuevo producto">Nuevo producto</button>
-          <button class="btn" id="btnRefreshInv" title="Volver a cargar productos">Actualizar</button>
+          <button class="btn danger" id="btnCleanDuplicates" title="Eliminar productos duplicados">Limpiar duplicados</button>
+          <button class="btn ghost" id="btnRefreshInv" title="Volver a cargar productos">Actualizar</button>
         </div>
       </header>
 
@@ -50,7 +51,7 @@
                     <span>Categoría</span>
                     <select id="invCategory"></select>
                   </label>
-                  <button class="btn ghost" id="cleanDuplicatesBtn" type="button" title="Buscar y eliminar productos duplicados">🧹 Limpiar duplicados</button>
+                 
                 </div>
               </div>
             </div>

@@ -104,7 +104,7 @@ Si ambos dispositivos editan el mismo producto al mismo tiempo:
 ## 🛠️ Solución de Problemas
 
 ### Error: "This operation is not supported"
-- El archivo debe ser un **Google Sheets nativo**, no un Excel subido
+- El archivo debe ser un **Google Sheets nativo** (no una conversión/preview)
 - Solución: Archivo → Guardar como Google Sheets
 
 ### Error: "Insufficient permissions"

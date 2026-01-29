@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import logging
 import os
 import re
 import shutil
@@ -15,12 +15,12 @@ import threading
 from sqlalchemy import delete, update
 
 from inventarios.db import session_scope
-from inventarios.excel_export import ExportRow, export_inventory_to_excel
-from inventarios.excel_import import ExcelImporter
 from inventarios.models import CashClose, CashDay, CashMove, Product, ProductImage, Sale, SaleLine
 from inventarios.repos import ProductRepo, SalesRepo
 from inventarios.services import PosService
 from inventarios.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,8 +62,7 @@ def _ask_open_filename(title: str, filetypes: list[tuple[str, str]]):
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError(
             "El selector de archivos solo funciona en el PC (hilo principal). "
-            "En modo servidor/tablet configura el Excel copiándolo a la carpeta 'instance' "
-            "(ruta recomendada) o usando el import/export desde el PC."
+            "En modo servidor/tablet no se pueden abrir ventanas del sistema desde el servidor."
         )
 
     # Tkinter is in the stdlib on Windows python.org builds.
@@ -109,108 +108,30 @@ class WebviewBackend:
         self._settings = settings
     
     def _auto_export_to_sheets(self):
-        """Exporta autom\u00e1ticamente a Google Sheets en segundo plano."""
+        """Exporta automáticamente a Google Sheets en segundo plano."""
         try:
-            from inventarios.google_sheets import GoogleSheetsSync
-            sync = GoogleSheetsSync()
-            
-            if sync.enabled:
-                with session_scope(self._session_factory) as session:
-                    repo = ProductRepo(session)
-                    products = repo.list(limit=9999)
-                
-                if products:
-                    sync.export_products(products)
-                    logger.info(f"\u2705 Auto-exportados {len(products)} productos a Google Sheets")
+            from inventarios.sincronizacion_google import SincronizadorGoogleSheets
+
+            svc = SincronizadorGoogleSheets(self._session_factory, self._settings)
+            res = svc.exportar_inventario()
+            if res.get("ok"):
+                logger.info("✅ Auto-exportado inventario a Google Sheets")
+            else:
+                logger.warning("⚠️  Auto-export inventario falló: %s", res.get("error"))
         except Exception as e:
-            logger.warning(f"\u26a0\ufe0f  Error en auto-exportaci\u00f3n: {e}")
+            logger.warning("⚠️  Error en auto-exportación: %s", e)
 
-    def _excel_sync_path(self) -> Path:
-        return (self._settings.INSTANCE_DIR / "excel_sync.json").resolve()
-
-    def _default_excel_path(self) -> Path:
-        p = Path(getattr(self._settings, "EXCEL_IMPORT_PATH", "") or "GAROM OK.xlsx")
-        if not p.is_absolute():
-            p = (self._settings.INSTANCE_DIR / p)
-        return p.resolve()
-
-    def _load_excel_sync(self) -> dict:
-        p = self._excel_sync_path()
-        if not p.exists():
-            # If user placed the Excel in the recommended default location, pick it up automatically.
-            d = self._default_excel_path()
-            last = str(d) if d.exists() else None
-            return {"last_excel_path": last, "auto_export_on_close": True}
+    def _auto_export_sales_to_sheets(self):
+        """Exporta automáticamente las ventas a la hoja VENTAS en Google Sheets."""
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            d = self._default_excel_path()
-            last = str(d) if d.exists() else None
-            return {"last_excel_path": last, "auto_export_on_close": True}
-        if not isinstance(data, dict):
-            d = self._default_excel_path()
-            last = str(d) if d.exists() else None
-            return {"last_excel_path": last, "auto_export_on_close": True}
+            from inventarios.sincronizacion_google import SincronizadorGoogleSheets
 
-        last = data.get("last_excel_path")
-        if isinstance(last, str):
-            last = last.strip() or None
-        else:
-            last = None
-
-        # If configured file is missing, fall back to default location if present.
-        if last:
-            try:
-                if not Path(last).exists():
-                    last = None
-            except Exception:
-                last = None
-
-        if not last:
-            d = self._default_excel_path()
-            if d.exists():
-                last = str(d)
-
-        return {"last_excel_path": last, "auto_export_on_close": bool(data.get("auto_export_on_close", True))}
-
-    def _save_excel_sync(self, data: dict) -> None:
-        p = self._excel_sync_path()
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
-
-    def _export_inventory_to_excel_path(self, file_path: str) -> dict:
-        fp = (file_path or "").strip()
-        if not fp:
-            return {"ok": False, "error": "Ruta inválida"}
-
-        xlsx = Path(fp)
-        if not xlsx.exists():
-            return {"ok": False, "error": "El archivo Excel no existe"}
-
-        with session_scope(self._session_factory) as session:
-            rows = session.query(Product).order_by(Product.producto.asc()).all()
-            out_rows: list[ExportRow] = []
-            for r in rows:
-                out_rows.append(
-                    ExportRow(
-                        producto=str(r.producto or ""),
-                        descripcion=str(r.descripcion or ""),
-                        unidades=int(r.unidades or 0),
-                        precio_final=Decimal(str(r.precio_final or 0)).quantize(Decimal("0.01")),
-                    )
-                )
-
-        try:
-            written, worksheet_used = export_inventory_to_excel(
-                xlsx_path=xlsx,
-                worksheet_name=getattr(self._settings, "EXCEL_EXPORT_WORKSHEET_NAME", "INVENTARIO"),
-                rows=out_rows,
-            )
+            svc = SincronizadorGoogleSheets(self._session_factory, self._settings)
+            res = svc.exportar_ventas(limit=500)
+            if res.get("ok") and int(res.get("exported") or 0) > 0:
+                logger.info("✅ Auto-exportadas %s ventas a Google Sheets", res.get("exported"))
         except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-        return {"ok": True, "path": str(xlsx), "written": int(written), "worksheet": str(worksheet_used)}
+            logger.warning("⚠️  Error en auto-exportación de ventas: %s", e)
 
     def getAppInfo(self):
         db_url = str(getattr(self._settings, "DATABASE_URL", "") or "")
@@ -456,6 +377,9 @@ class WebviewBackend:
             res = service.checkout(cart, payment_method=payment_method, cash_received=cash_received)
             if not res.ok:
                 return {"ok": False, "error": res.error or "Error", "details": res.details or None}
+
+            # Exportar ventas a Google Sheets después de cada venta
+            self._auto_export_sales_to_sheets()
 
             return {
                 "ok": True,
@@ -740,15 +664,7 @@ class WebviewBackend:
 
             # Auto-exportar a Google Sheets al cerrar caja
             self._auto_export_to_sheets()
-
-            export_res = None
-            try:
-                sync = self._load_excel_sync()
-                last_path = (sync.get("last_excel_path") or "").strip()
-                if bool(sync.get("auto_export_on_close", True)) and last_path:
-                    export_res = self._export_inventory_to_excel_path(last_path)
-            except Exception:
-                export_res = None
+            self._auto_export_sales_to_sheets()
 
             return {
                 "ok": True,
@@ -759,7 +675,6 @@ class WebviewBackend:
                 "carry_to_next_day": float(row.carry_to_next_day),
                 "cash_diff": float(row.cash_diff) if row.cash_diff is not None else None,
                 "message": msg,
-                "excel_export": export_res,
             }
 
     def listCashCloses(self, limit: int = 30):
@@ -869,142 +784,49 @@ class WebviewBackend:
                 },
             }
 
-    def importExcel(self):
-        """Importar desde Google Sheets (o Excel como fallback)."""
+    def importGoogleSheets(self):
+        """Importa inventario desde Google Sheets y actualiza la base de datos."""
         try:
-            from inventarios.google_sheets import GoogleSheetsSync
-            from inventarios.excel_import import ImportedProduct
-            
-            sync = GoogleSheetsSync()
-            
-            # Intentar importar desde Google Sheets primero
-            if sync.enabled:
-                logger.info("Importando desde Google Sheets...")
-                products = sync.import_products()
-                
-                if products:
-                    # Convertir a ImportedProduct y actualizar base de datos
-                    imported = [
-                        ImportedProduct(
-                            key=p.key,
-                            producto=p.producto,
-                            descripcion=p.descripcion,
-                            unidades=p.unidades,
-                            precio_final=p.precio_final
-                        )
-                        for p in products
-                    ]
-                    
-                    with session_scope(self._session_factory) as session:
-                        repo = ProductRepo(session)
-                        count = repo.upsert_many(imported)
-                    
-                    return {"ok": True, "imported": len(products), "upserted": count, "source": "Google Sheets"}
-                else:
-                    return {"ok": False, "error": "No se encontraron productos en Google Sheets"}
-            
+            from inventarios.sincronizacion_google import SincronizadorGoogleSheets
+
+            svc = SincronizadorGoogleSheets(self._session_factory, self._settings)
+            return svc.importar_inventario()
         except Exception as e:
-            logger.warning(f"Error con Google Sheets, intentando Excel: {e}")
-        
-        # Fallback a Excel si Google Sheets no funciona
-        try:
-            file_name = _ask_open_filename("Importar desde Excel", [("Excel", "*.xlsx"), ("Todos", "*.*")])
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-        if not file_name:
-            return {"ok": False, "error": "Importación cancelada"}
-
-        try:
-            importer = ExcelImporter(
-                xlsx_path=Path(file_name),
-                worksheet_name=self._settings.EXCEL_WORKSHEET_NAME,
-                engine=self._settings.LOCAL_EXCEL_ENGINE,
-                cache_dir=self._settings.INSTANCE_DIR,
-            )
-            products = importer.read_products()
-            if not products:
-                return {
-                    "ok": False,
-                    "error": "No se encontraron productos para importar (revisa hoja/encabezados).",
-                }
-
-            with session_scope(self._session_factory) as session:
-                repo = ProductRepo(session)
-                changed = repo.upsert_many(products)
-
-            # Remember this Excel path for future exports.
-            try:
-                sync = self._load_excel_sync()
-                sync["last_excel_path"] = str(Path(file_name).resolve())
-                if "auto_export_on_close" not in sync:
-                    sync["auto_export_on_close"] = True
-                self._save_excel_sync(sync)
-            except Exception:
-                pass
-
-            return {"ok": True, "imported": int(len(products)), "upserted": int(changed), "source": "Excel"}
-        except Exception as e:
+            logger.error("Error importando desde Google Sheets: %s", e)
             return {"ok": False, "error": str(e)}
 
-    def exportExcelSelect(self):
+    def exportGoogleSheets(self):
+        """Exporta el inventario local a Google Sheets."""
         try:
-            file_name = _ask_open_filename(
-                "Exportar inventario a Excel (selecciona el archivo)",
-                [("Excel", "*.xlsx"), ("Todos", "*.*")],
-            )
+            from inventarios.sincronizacion_google import SincronizadorGoogleSheets
+
+            svc = SincronizadorGoogleSheets(self._session_factory, self._settings)
+            return svc.exportar_inventario()
         except Exception as e:
+            logger.error("Error exportando a Google Sheets: %s", e)
             return {"ok": False, "error": str(e)}
-        if not file_name:
-            return {"ok": False, "error": "Exportación cancelada"}
 
-        res = self._export_inventory_to_excel_path(file_name)
-        if res.get("ok"):
-            try:
-                sync = self._load_excel_sync()
-                sync["last_excel_path"] = str(Path(file_name).resolve())
-                if "auto_export_on_close" not in sync:
-                    sync["auto_export_on_close"] = True
-                self._save_excel_sync(sync)
-            except Exception:
-                pass
-        return res
-
-    def exportExcelToLast(self):
-        """Exportar a Google Sheets automáticamente (en tiempo real)."""
+    def syncGoogleSheets(self):
+        """Sincroniza (import + export + ventas) con Google Sheets."""
         try:
-            from inventarios.google_sheets import GoogleSheetsSync
-            
-            sync = GoogleSheetsSync()
-            
-            # Intentar exportar a Google Sheets primero (tiempo real)
-            if sync.enabled:
-                logger.info("⏱ Exportando a Google Sheets en tiempo real...")
-                with session_scope(self._session_factory) as session:
-                    repo = ProductRepo(session)
-                    products = repo.list(limit=9999)
-                
-                if products:
-                    success = sync.export_products(products)
-                    if success:
-                        url = sync.get_spreadsheet_url()
-                        return {"ok": True, "exported": len(products), "url": url, "target": "Google Sheets"}
-                    else:
-                        return {"ok": False, "error": "Error exportando a Google Sheets"}
-                else:
-                    return {"ok": False, "error": "No hay productos para exportar"}
-            
+            from inventarios.sincronizacion_google import SincronizadorGoogleSheets
+
+            svc = SincronizadorGoogleSheets(self._session_factory, self._settings)
+            return svc.sincronizar_todo()
         except Exception as e:
-            logger.warning(f"Error con Google Sheets, intentando Excel: {e}")
-        
-        # Fallback a Excel
-        sync_data = self._load_excel_sync()
-        last_path = (sync_data.get("last_excel_path") or "").strip()
-        if not last_path:
-            return {
-                "ok": False,
-                "error": f"No hay Excel configurado aún.\n\nOpciones:\n- En el PC del servidor: usa 'Exportar Excel' y selecciona el archivo.\n- O coloca el Excel aquí: {self._default_excel_path()}\n\nLuego, al cerrar caja se exporta automático.",
-            }
-        return self._export_inventory_to_excel_path(last_path)
+            logger.error("Error sincronizando Google Sheets: %s", e)
+            return {"ok": False, "error": str(e)}
+
+    def exportSalesToSheets(self):
+        """Exporta ventas a la hoja VENTAS en Google Sheets."""
+        try:
+            from inventarios.sincronizacion_google import SincronizadorGoogleSheets
+
+            svc = SincronizadorGoogleSheets(self._session_factory, self._settings)
+            return svc.exportar_ventas(limit=500)
+        except Exception as e:
+            logger.error("Error exportando ventas: %s", e)
+            return {"ok": False, "error": str(e)}
 
     def resetDatabase(self, confirm_text: str):
         if (confirm_text or "").strip().upper() != "BORRAR":

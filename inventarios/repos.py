@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.sqlite import insert
 
-from inventarios.excel_import import ImportedProduct
+from inventarios.tipos_importacion import ProductoImportado
 from inventarios.models import Product, ProductImage, Sale, SaleLine, StockMove
 
 
@@ -25,12 +25,12 @@ class ProductRepo:
     def __init__(self, session: Session):
         self.session = session
 
-    def upsert_many(self, products: list[ImportedProduct]) -> int:
+    def upsert_many(self, products: list[ProductoImportado]) -> int:
         if not products:
             return 0
 
-        # Excel sheets can contain repeated product keys; keep the last occurrence.
-        dedup: dict[str, ImportedProduct] = {}
+        # La hoja puede contener llaves repetidas; conservar la última ocurrencia.
+        dedup: dict[str, ProductoImportado] = {}
         for p in products:
             dedup[p.key] = p
         products = list(dedup.values())

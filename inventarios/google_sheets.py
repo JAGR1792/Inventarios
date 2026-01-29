@@ -314,3 +314,124 @@ class GoogleSheetsSync:
         if not self.settings.GOOGLE_SHEETS_SPREADSHEET_ID:
             return ""
         return f"https://docs.google.com/spreadsheets/d/{self.settings.GOOGLE_SHEETS_SPREADSHEET_ID}/edit"
+    
+    def _ensure_worksheet_exists(self, service, spreadsheet_id: str, worksheet_name: str) -> bool:
+        """Asegura que la hoja existe, creándola si es necesario."""
+        try:
+            # Obtener información del spreadsheet para ver las hojas existentes
+            spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = spreadsheet.get('sheets', [])
+            
+            # Verificar si la hoja ya existe
+            for sheet in sheets:
+                if sheet.get('properties', {}).get('title') == worksheet_name:
+                    return True
+            
+            # Crear la hoja si no existe
+            body = {
+                'requests': [{
+                    'addSheet': {
+                        'properties': {
+                            'title': worksheet_name
+                        }
+                    }
+                }]
+            }
+            service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
+            logger.info(f"Creada nueva hoja: {worksheet_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error verificando/creando hoja {worksheet_name}: {e}")
+            return False
+    
+    def export_sales(self, sales: list) -> bool:
+        """
+        Exporta ventas a la hoja VENTAS en Google Sheets.
+        Cada venta se registra con sus líneas de detalle.
+        """
+        if not self.enabled:
+            logger.warning("Google Sheets no está configurado")
+            return False
+            
+        service = self._get_service()
+        if not service:
+            return False
+            
+        try:
+            spreadsheet_id = self.settings.GOOGLE_SHEETS_SPREADSHEET_ID
+            worksheet_name = "VENTAS"
+            
+            # Asegurar que la hoja VENTAS existe
+            if not self._ensure_worksheet_exists(service, spreadsheet_id, worksheet_name):
+                return False
+            
+            # Headers para la hoja VENTAS
+            headers = [
+                "ID VENTA",
+                "FECHA",
+                "HORA",
+                "METODO PAGO",
+                "PRODUCTO",
+                "DESCRIPCION",
+                "CANTIDAD",
+                "PRECIO UNIT",
+                "SUBTOTAL",
+                "TOTAL VENTA"
+            ]
+            
+            # Preparar datos
+            rows = [headers]
+            
+            for sale in sales:
+                sale_id = sale.id
+                fecha = sale.created_at.strftime("%Y-%m-%d")
+                hora = sale.created_at.strftime("%H:%M:%S")
+                metodo = sale.payment_method.upper()
+                total_venta = float(sale.total)
+                
+                for line in sale.lines:
+                    # Formatear precios con signo $
+                    precio_unit_str = f"$ {int(line.unit_price):,}".replace(',', '.')
+                    subtotal_str = f"$ {int(line.line_total):,}".replace(',', '.')
+                    total_str = f"$ {int(total_venta):,}".replace(',', '.')
+                    
+                    row = [
+                        sale_id,
+                        fecha,
+                        hora,
+                        metodo,
+                        line.producto,
+                        line.descripcion or "",
+                        line.qty,
+                        precio_unit_str,
+                        subtotal_str,
+                        total_str
+                    ]
+                    rows.append(row)
+            
+            # Limpiar hoja y escribir datos
+            range_name = f'{worksheet_name}!A1:J{len(rows)}'
+            
+            # Primero limpiar la hoja
+            service.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=f'{worksheet_name}!A:J'
+            ).execute()
+            
+            # Luego escribir datos
+            body = {'values': rows}
+            result = service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='USER_ENTERED',
+                body=body
+            ).execute()
+            
+            updated = result.get('updatedCells', 0)
+            logger.info(f"Exportadas {len(sales)} ventas ({len(rows)-1} líneas) a Google Sheets ({updated} celdas)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error exportando ventas a Google Sheets: {e}")
+            return False

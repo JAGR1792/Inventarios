@@ -47,12 +47,12 @@ Deberías ver:
 
 ## 🎯 Uso en la Aplicación
 
-### Importar (Botón "Importar Excel")
+### Importar (Botón "Importar")
 - Ahora importará automáticamente desde Google Sheets
 - Ya no te pedirá seleccionar un archivo
 - Descarga directamente desde la nube
 
-### Exportar (Botón "Exportar Excel")
+### Exportar (Botón "Exportar")
 - Exporta automáticamente a Google Sheets
 - **En tiempo real** - actualización instantánea
 - Ya no necesitas seleccionar archivo
@@ -80,7 +80,7 @@ GOOGLE_CREDENTIALS_FILE=KEY.json
 ## 🔄 Sincronización Automática (Opcional)
 
 Si quieres que exporte automáticamente cada 5 minutos, puedes configurar un scheduler. Por ahora, la exportación se hace:
-- Al presionar "Exportar Excel"
+- Al presionar "Exportar"
 - Al cerrar caja (si está configurado)
 
 ## ⚠️ Importante

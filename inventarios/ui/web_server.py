@@ -208,15 +208,23 @@ def create_app(session_factory, settings: Settings) -> Flask:
         data = request.get_json(silent=True) or {}
         return _ok(backend.setProductInfo(data.get("key"), data.get("producto"), data.get("descripcion", "")))
 
-    @app.route("/api/exportExcelSelect", methods=["POST", "GET"])
-    def api_export_excel_select():
-        # Opens a file picker on the server machine (Windows).
-        return _ok(backend.exportExcelSelect())
+    @app.route("/api/importGoogleSheets", methods=["POST", "GET"])
+    def api_import_google_sheets():
+        return _ok(backend.importGoogleSheets())
 
-    @app.route("/api/exportExcelToLast", methods=["POST", "GET"])
-    def api_export_excel_to_last():
-        # Uses the last selected Excel path (stored on the server).
-        return _ok(backend.exportExcelToLast())
+    @app.route("/api/exportGoogleSheets", methods=["POST", "GET"])
+    def api_export_google_sheets():
+        return _ok(backend.exportGoogleSheets())
+
+    @app.route("/api/syncGoogleSheets", methods=["POST", "GET"])
+    def api_sync_google_sheets():
+        # Sync with Google Sheets (import + export + ventas)
+        return _ok(backend.syncGoogleSheets())
+
+    @app.route("/api/exportSales", methods=["POST", "GET"])
+    def api_export_sales():
+        # Export sales to Google Sheets
+        return _ok(backend.exportSalesToSheets())
 
     @app.post("/api/createProduct")
     def api_create_product():
@@ -280,47 +288,5 @@ def create_app(session_factory, settings: Settings) -> Flask:
             v = ""
 
         return _ok({"ok": True, "image_url": f"/files/images/{quote(dst.name)}{v}"})
-
-    @app.post("/api/importExcelUpload")
-    def api_import_excel_upload():
-        f = request.files.get("file")
-        if f is None or not f.filename:
-            return _ok({"ok": False, "error": "Archivo inválido"})
-
-        tmp = (settings.INSTANCE_DIR / "_upload.xlsx").resolve()
-        try:
-            f.save(tmp)
-        except Exception as e:
-            return _ok({"ok": False, "error": f"No se pudo guardar Excel: {e}"})
-
-        try:
-            res = backend._settings  # keep lint quiet
-            # Use the same importer as desktop, but with the uploaded file.
-            from inventarios.excel_import import ExcelImporter
-            from inventarios.db import session_scope
-            from inventarios.repos import ProductRepo
-
-            importer = ExcelImporter(
-                xlsx_path=tmp,
-                worksheet_name=settings.EXCEL_WORKSHEET_NAME,
-                engine="openpyxl",  # server-side safe default
-                cache_dir=settings.INSTANCE_DIR,
-            )
-            products = importer.read_products()
-            if not products:
-                return _ok({"ok": False, "error": "No se encontraron productos (revisa hoja/encabezados)."})
-
-            with session_scope(session_factory) as session:
-                repo = ProductRepo(session)
-                changed = repo.upsert_many(products)
-
-            return _ok({"ok": True, "imported": int(len(products)), "upserted": int(changed)})
-        except Exception as e:
-            return _ok({"ok": False, "error": str(e)})
-        finally:
-            try:
-                tmp.unlink(missing_ok=True)  # py3.8+ supports missing_ok
-            except Exception:
-                pass
 
     return app

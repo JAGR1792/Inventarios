@@ -3,32 +3,23 @@
 Este proyecto es un **POS de escritorio** (Point of Sale) hecho con **pywebview** (usa Edge WebView2 en Windows).
 
 La **fuente de verdad** ahora es una **base de datos real** (SQLite), para máxima velocidad y estabilidad.
-El Excel queda como **fuente de importación** (opcional) para cargar/actualizar catálogo.
+La sincronización de inventario se hace con **Google Sheets**.
 
 ## Objetivo clave
 - Operación rápida tipo caja: búsqueda/escaneo, carrito, cobro.
 - Persistencia local: ventas y stock quedan en SQLite.
-- Importación desde Excel (si lo deseas): se leen solo columnas requeridas de la hoja `Costos`.
+- Sincronización de inventario con Google Sheets: importar/exportar desde la app.
 
 ## Arquitectura (bien separada)
 
-- `inventarios/`: core (settings, DB, modelos, repos, servicios, importador de Excel).
+- `inventarios/`: core (settings, DB, modelos, repos, servicios).
 - `inventarios/ui/`: host desktop (pywebview) + UI web (HTML/CSS/JS).
 - `main.py`: entrypoint desktop.
 
 ### Flujo de datos
-1. (Opcional) **Importar catálogo** desde Excel a SQLite.
+1. **Importar inventario** desde Google Sheets a SQLite.
 2. **Ventas/stock** se operan contra SQLite (rápido y consistente).
 3. **Resumen** se calcula desde el historial local (SQLite).
-
-## Excel (opcional): Importar catálogo
-Puedes importar (o reimportar) productos desde un `.xlsx`:
-- Hoja: `EXCEL_WORKSHEET_NAME` (default `Costos`)
-- Columnas: `Producto`, `Descripcion`, `unidades`, `Precio Final`
-
-Motor:
-- `LOCAL_EXCEL_ENGINE=openpyxl` (rápido)
-- `LOCAL_EXCEL_ENGINE=excel` (Windows + Excel instalado): mejor para valores de fórmulas
 
 ## 🔄 Google Sheets (opcional): Sincronización automática
 **¡NUEVO!** Ahora puedes sincronizar el inventario con Google Sheets en tiempo real:
@@ -39,9 +30,6 @@ Motor:
 
 👉 **Ver guía completa**: [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md)
 
-## Por qué no usar Excel como “base de datos”
-Excel es excelente para planillas, pero como motor de datos es frágil (bloqueos al abrir, fórmulas no recalculadas por librerías, riesgo de corrupción, bajo rendimiento al leer/escribir).
-
 SQLite es:
 - Mucho más rápido para búsquedas.
 - Seguro para transacciones (ventas/stock).
@@ -50,15 +38,12 @@ SQLite es:
 ## Configuración
 Copia `.env.example` a `.env` y ajusta:
 - `DATABASE_URL` (por defecto: `sqlite:///instance/pos.sqlite`)
-- `EXCEL_IMPORT_PATH` (si vas a importar)
-- `EXCEL_WORKSHEET_NAME` (por defecto: `Costos`)
-- `LOCAL_EXCEL_ENGINE` (`openpyxl` o `excel`)
 - `IMAGES_DIR` (opcional)
 - **Google Sheets** (opcional): Ver [GOOGLE_SHEETS_SETUP.md](GOOGLE_SHEETS_SETUP.md) para sincronización automática
 
 ## Ejecutar
 - Instalar deps: `pip install -r requirements.txt`
-- (Opcional) Importar Excel → SQLite: `python scripts/import_excel_to_db.py`
+- (Opcional) Importar desde Google Sheets → SQLite: `python scripts/import_google_sheets_to_db.py`
 - Iniciar desktop: `python run_desktop.py`
 
 ## Modo tablet (LAN / navegador)
