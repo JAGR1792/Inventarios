@@ -360,9 +360,8 @@ function openModal(key) {
   if (catEl) catEl.value = String(p.category || '')
   const priceEl = document.getElementById('imPriceEdit')
   if (priceEl) priceEl.value = String(Number(p.precio_final || 0))
-  document.getElementById('imRestockQty').value = '1'
   document.getElementById('imSetStock').value = String(stock)
-  document.getElementById('imHint').textContent = 'Usa Rellenar para sumar. Ajustar stock para corregir.'
+  document.getElementById('imHint').textContent = 'Ajusta el stock al valor correcto.'
 
   const delBtn = document.getElementById('imDeleteProduct')
   if (delBtn) delBtn.hidden = !state.backend?.deleteProduct
@@ -383,33 +382,6 @@ function closeModal() {
   state.currentKey = null
 }
 
-async function doRestock() {
-  const key = state.currentKey
-  if (!key) return
-  const qty = Number(document.getElementById('imRestockQty').value || 0)
-  if (!Number.isFinite(qty) || qty <= 0) {
-    const err = document.getElementById('imError')
-    err.hidden = false
-    err.textContent = 'Cantidad inválida (usa 1 o más para Rellenar)'
-    return
-  }
-  const notes = prompt('Notas (opcional):', 'relleno')
-
-  const res = await state.backend.restockProduct(key, qty, notes || '')
-  if (!res || !res.ok) {
-    const err = document.getElementById('imError')
-    err.hidden = false
-    err.textContent = res?.error || 'No se pudo rellenar'
-    return
-  }
-
-  const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
-  if (p) p.unidades = Number(res.unidades || p.unidades || 0)
-  openModal(key)
-  renderGrid()
-  toast('Stock actualizado')
-}
-
 async function doSaveCategory() {
   const key = state.currentKey
   if (!key) return
@@ -425,7 +397,152 @@ async function doSaveCategory() {
   if (p) p.category = cat
   await loadCategories()
   renderGrid()
-  alert('Categoría actualizada')
+  toast('Categoría actualizada')
+}
+
+async function doSaveAllChanges() {
+  const key = state.currentKey
+  if (!key) return
+
+  // Recopilar todos los cambios
+  const name = String(document.getElementById('imNameEdit')?.value || '').trim()
+  const desc = String(document.getElementById('imDescEdit')?.value || '').trim()
+  const cat = String(document.getElementById('imCategory')?.value || '').trim()
+  const priceRaw = String(document.getElementById('imPriceEdit')?.value || '').trim()
+  const stockRaw = String(document.getElementById('imSetStock')?.value || '').trim()
+  const price = priceRaw ? Number(priceRaw) : 0
+  const stock = Math.max(0, Number(stockRaw || 0))
+
+  const err = document.getElementById('imError')
+  if (err) { err.hidden = true; err.textContent = '' }
+
+  // Validaciones
+  if (!name) {
+    if (err) { err.hidden = false; err.textContent = 'Nombre requerido' }
+    return
+  }
+  if (!Number.isFinite(price) || price < 0) {
+    if (err) { err.hidden = false; err.textContent = 'Precio inválido' }
+    return
+  }
+
+  // Deshabilitar botón durante guardado
+  const saveBtn = document.getElementById('imSaveBtn')
+  if (saveBtn) {
+    saveBtn.disabled = true
+    saveBtn.textContent = 'Guardando...'
+  }
+
+  try {
+    // Ejecutar cambios en paralelo donde sea posible
+    const promises = []
+
+    // Si nombre o descripción cambiaron
+    const origProduct = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
+    if (origProduct && (name !== origProduct.producto || desc !== origProduct.descripcion)) {
+      promises.push(
+        state.backend.setProductInfo(key, name, desc).then(res => {
+          if (res?.ok && origProduct) {
+            origProduct.producto = name
+            origProduct.descripcion = desc
+            document.getElementById('imTitle').textContent = name || 'Producto'
+            document.getElementById('imDesc').textContent = desc || ''
+          }
+          return res
+        })
+      )
+    }
+
+    // Si precio cambió
+    if (origProduct && price !== origProduct.precio_final) {
+      promises.push(
+        state.backend.setProductPrice(key, price).then(res => {
+          if (res?.ok && origProduct) {
+            origProduct.precio_final = Number(res.precio_final ?? price)
+            document.getElementById('imPrice').textContent = `$${fmtMoney(Number(res.precio_final ?? price))}`
+          }
+          return res
+        })
+      )
+    }
+
+    // Si categoría cambió
+    if (origProduct && cat !== origProduct.category) {
+      promises.push(
+        state.backend.setProductCategory(key, cat).then(res => {
+          if (res?.ok && origProduct) {
+            origProduct.category = cat
+          }
+          return res
+        })
+      )
+    }
+
+    // Si stock cambió
+    if (origProduct && stock !== origProduct.unidades) {
+      const notes = 'ajuste desde edición'
+      promises.push(
+        state.backend.setProductStock(key, stock, notes).then(res => {
+          if (res?.ok && origProduct) {
+            origProduct.unidades = Number(res.unidades || 0)
+            const newStock = Number(res.unidades || 0)
+            const stockClass = newStock <= 0 ? 'stockBad' : (newStock <= 2 ? 'stockLow' : 'stockOk')
+            const stockEl = document.getElementById('imStock')
+            if (stockEl) {
+              stockEl.textContent = String(newStock)
+              stockEl.className = `stock ${stockClass}`
+            }
+            document.getElementById('imSetStock').value = String(newStock)
+          }
+          return res
+        })
+      )
+    }
+
+    // Si no hay cambios, mostrar mensaje
+    if (promises.length === 0) {
+      toast('Sin cambios para guardar')
+      if (saveBtn) {
+        saveBtn.disabled = false
+        saveBtn.textContent = 'Guardar cambios'
+      }
+      return
+    }
+
+    // Esperar a que todos se completen
+    const results = await Promise.all(promises)
+
+    // Verificar si hay errores
+    const hasError = results.some(res => !res || !res.ok)
+    if (hasError) {
+      const firstError = results.find(res => !res || !res.ok)
+      if (err) {
+        err.hidden = false
+        err.textContent = firstError?.error || 'Error al guardar algunos cambios'
+      }
+      if (saveBtn) {
+        saveBtn.disabled = false
+        saveBtn.textContent = 'Guardar cambios'
+      }
+      return
+    }
+
+    // Éxito
+    await loadCategories()
+    renderGrid()
+    toast('✅ Cambios guardados exitosamente')
+
+  } catch (e) {
+    if (err) {
+      err.hidden = false
+      err.textContent = 'Error: ' + (e?.message || e)
+    }
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false
+      saveBtn.textContent = 'Guardar cambios'
+    }
+  }
 }
 
 async function doSavePrice() {
@@ -448,9 +565,12 @@ async function doSavePrice() {
   }
   const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
   if (p) p.precio_final = Number(res.precio_final ?? price)
-  openModal(key)
+  
+  // Actualizar display sin re-abrir modal
+  document.getElementById('imPrice').textContent = `$${fmtMoney(Number(res.precio_final ?? price))}`
+  
   renderGrid()
-  alert('Precio actualizado correctamente')
+  toast('Precio actualizado')
 }
 
 async function doSaveInfo() {
@@ -480,9 +600,13 @@ async function doSaveInfo() {
 
   const p = state.products.find((x) => String(x.key ?? '').trim() === String(key ?? '').trim())
   if (p) { p.producto = name; p.descripcion = desc }
-  openModal(key)
+  
+  // Actualizar display sin re-abrir modal
+  document.getElementById('imTitle').textContent = name || 'Producto'
+  document.getElementById('imDesc').textContent = desc || ''
+  
   renderGrid()
-  alert('Información del producto actualizada')
+  toast('Información del producto actualizada')
 }
 
 async function doExportGoogleSheets() {
@@ -642,7 +766,10 @@ function openNewProductModal() {
 
 function closeNewProductModal() {
   const m = document.getElementById('newProdModal')
-  if (m) m.hidden = true
+  if (m) {
+    m.hidden = true
+    m.style.display = 'none'
+  }
 }
 
 async function doCreateProduct() {
@@ -690,13 +817,13 @@ async function doCreateProduct() {
     return
   }
 
-  // Cerrar modal INMEDIATAMENTE
+  // Mostrar toast ANTES de cerrar para que sea visible
+  toast('✅ Producto creado exitosamente')
+  
+  // Cerrar modal inmediatamente
   closeNewProductModal()
   
-  // Mostrar confirmación clara
-  alert('✅ Producto creado exitosamente')
-  
-  // Actualizar listas
+  // Actualizar listas en background
   await loadCategories()
   await searchProducts()
 }
@@ -921,11 +1048,7 @@ async function init() {
   })
 
   document.getElementById('imClose').addEventListener('click', closeModal)
-  document.getElementById('imSaveInfoBtn').addEventListener('click', doSaveInfo)
-  document.getElementById('imRestockBtn').addEventListener('click', doRestock)
-  document.getElementById('imSetStockBtn').addEventListener('click', doSetStock)
-  document.getElementById('imSaveCatBtn').addEventListener('click', doSaveCategory)
-  document.getElementById('imSavePriceBtn').addEventListener('click', doSavePrice)
+  document.getElementById('imSaveBtn').addEventListener('click', doSaveAllChanges)
   document.getElementById('imPickImg').addEventListener('click', doPickImage)
   document.getElementById('imClearImg').addEventListener('click', doClearImage)
 

@@ -236,7 +236,9 @@ class WebviewBackend:
         return {"ok": bool(ok)}
 
     def restockProduct(self, key: str, delta: int, notes: str = ""):
-        """Add inventory units to a product (delta can be positive; negative will reduce but not below 0)."""
+        """Add inventory units to a product (delta can be positive; negative will reduce but not below 0).
+        Deprecated: Use setProductStock() instead. This function is maintained for backwards compatibility.
+        """
         try:
             d = int(delta or 0)
         except Exception:
@@ -247,7 +249,7 @@ class WebviewBackend:
         with session_scope(self._session_factory) as session:
             repo = ProductRepo(session)
             try:
-                new_stock = repo.adjust_stock(key, delta=d, kind="restock", notes=notes)
+                new_stock = repo.adjust_stock(key, delta=d, kind="adjust", notes=notes)
             except Exception as e:
                 return {"ok": False, "error": str(e)}
 

@@ -98,16 +98,9 @@
 
               <div class="closeGrid mt10">
                 <label class="field">
-                  <span>Rellenar (+unidades)</span>
-                  <input id="imRestockQty" type="number" value="1" min="0" />
-                </label>
-                <button class="btn" id="imRestockBtn" type="button">Rellenar</button>
-
-                <label class="field">
                   <span>Ajustar stock (dejar en)</span>
                   <input id="imSetStock" type="number" min="0" placeholder="0" />
                 </label>
-                <button class="btn" id="imSetStockBtn" type="button">Guardar stock</button>
               </div>
 
               <div class="hint mt10" id="imHint">—</div>
@@ -115,9 +108,7 @@
           </div>
           <div class="modalActions">
             <button class="btn" id="imClose">Cerrar</button>
-            <button class="btn" id="imSaveInfoBtn" type="button">Guardar nombre/desc</button>
-            <button class="btn" id="imSaveCatBtn" type="button">Guardar categoría</button>
-            <button class="btn" id="imSavePriceBtn" type="button">Guardar precio</button>
+            <button class="btn primary" id="imSaveBtn" type="button">Guardar cambios</button>
             <button class="btn" id="imPickImg" type="button">Cambiar imagen</button>
             <button class="btn ghost" id="imClearImg" type="button">Quitar imagen</button>
             <button class="btn danger" id="imDeleteProduct" type="button" title="Elimina el producto del inventario">Eliminar producto</button>
