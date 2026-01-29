@@ -287,9 +287,9 @@ class WebviewBackend:
         return {"ok": True, "precio_final": float(price)}
 
     def createProduct(self, producto: str, descripcion: str = "", precio_final=None, unidades: int = 0, category: str = ""):
-        with session_scope(self._session_factory) as session:
-            repo = ProductRepo(session)
-            try:
+        try:
+            with session_scope(self._session_factory) as session:
+                repo = ProductRepo(session)
                 row = repo.create_product(
                     producto=producto,
                     descripcion=descripcion,
@@ -297,13 +297,14 @@ class WebviewBackend:
                     precio_final=Decimal(str(precio_final or 0)),
                     category=category,
                 )
-            except Exception as e:
-                return {"ok": False, "error": str(e)}
-        
-        # Auto-exportar a Google Sheets
-        self._auto_export_to_sheets()
-        
-        return {"ok": True, "key": row.key}
+                product_key = row.key
+            
+            # Auto-exportar a Google Sheets (solo si se creó exitosamente)
+            self._auto_export_to_sheets()
+            
+            return {"ok": True, "key": product_key}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def deleteProduct(self, key: str, confirm_text: str = ""):
         k = (key or "").strip()

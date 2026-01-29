@@ -203,8 +203,6 @@ class ProductRepo:
             )
         )
         return int(new_stock)
-        row.updated_at = datetime.utcnow()
-        return True
 
     def create_product(
         self,
