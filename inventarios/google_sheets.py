@@ -348,7 +348,7 @@ class GoogleSheetsSync:
     def export_sales(self, sales: list) -> bool:
         """
         Exporta ventas a la hoja VENTAS en Google Sheets.
-        Cada venta se registra con sus líneas de detalle.
+        Cada venta se registra como una fila (factura) con sus productos resumidos.
         """
         if not self.enabled:
             logger.warning("Google Sheets no está configurado")
@@ -366,21 +366,18 @@ class GoogleSheetsSync:
             if not self._ensure_worksheet_exists(service, spreadsheet_id, worksheet_name):
                 return False
             
-            # Headers para la hoja VENTAS
+            # Headers para la hoja VENTAS (formato factura)
             headers = [
                 "ID VENTA",
                 "FECHA",
                 "HORA",
                 "METODO PAGO",
-                "PRODUCTO",
-                "DESCRIPCION",
-                "CANTIDAD",
-                "PRECIO UNIT",
-                "SUBTOTAL",
+                "PRODUCTOS",
+                "CANT. ITEMS",
                 "TOTAL VENTA"
             ]
             
-            # Preparar datos
+            # Preparar datos - una fila por venta (factura)
             rows = [headers]
             
             for sale in sales:
@@ -390,28 +387,36 @@ class GoogleSheetsSync:
                 metodo = sale.payment_method.upper()
                 total_venta = float(sale.total)
                 
+                # Construir resumen de productos
+                productos_list = []
+                total_items = 0
                 for line in sale.lines:
-                    # Formatear precios con signo $
-                    precio_unit_str = f"$ {int(line.unit_price):,}".replace(',', '.')
-                    subtotal_str = f"$ {int(line.line_total):,}".replace(',', '.')
-                    total_str = f"$ {int(total_venta):,}".replace(',', '.')
-                    
-                    row = [
-                        sale_id,
-                        fecha,
-                        hora,
-                        metodo,
-                        line.producto,
-                        line.descripcion or "",
-                        line.qty,
-                        precio_unit_str,
-                        subtotal_str,
-                        total_str
-                    ]
-                    rows.append(row)
+                    qty = int(line.qty)
+                    total_items += qty
+                    desc = line.descripcion or ""
+                    if qty > 1:
+                        productos_list.append(f"{qty}x {line.producto} {desc}".strip())
+                    else:
+                        productos_list.append(f"{line.producto} {desc}".strip())
+                
+                productos_str = " | ".join(productos_list)
+                
+                # Formatear total con signo $
+                total_str = f"$ {int(total_venta):,}".replace(',', '.')
+                
+                row = [
+                    sale_id,
+                    fecha,
+                    hora,
+                    metodo,
+                    productos_str,
+                    total_items,
+                    total_str
+                ]
+                rows.append(row)
             
             # Limpiar hoja y escribir datos
-            range_name = f'{worksheet_name}!A1:J{len(rows)}'
+            range_name = f'{worksheet_name}!A1:G{len(rows)}'
             
             # Primero limpiar la hoja
             service.spreadsheets().values().clear(
@@ -429,7 +434,7 @@ class GoogleSheetsSync:
             ).execute()
             
             updated = result.get('updatedCells', 0)
-            logger.info(f"Exportadas {len(sales)} ventas ({len(rows)-1} líneas) a Google Sheets ({updated} celdas)")
+            logger.info(f"Exportadas {len(sales)} ventas a Google Sheets ({updated} celdas)")
             return True
             
         except Exception as e:

@@ -73,10 +73,12 @@ class SincronizadorGoogleSheets:
             repo = ProductRepo(session)
             productos_db = repo.list(limit=9999)
 
-        if not productos_db:
-            return {"ok": False, "error": "No hay productos para exportar"}
+            if not productos_db:
+                return {"ok": False, "error": "No hay productos para exportar"}
 
-        ok = bool(sync.export_products(productos_db))
+            # Exportar DENTRO de la sesión para que los objetos estén vinculados
+            ok = bool(sync.export_products(productos_db))
+
         if not ok:
             return {"ok": False, "error": "Error exportando a Google Sheets"}
 
@@ -91,10 +93,12 @@ class SincronizadorGoogleSheets:
             sales_repo = SalesRepo(session)
             sales = sales_repo.list_sales(limit=int(limit or 500))
 
-        if not sales:
-            return {"ok": True, "exported": 0, "message": "No hay ventas para exportar"}
+            if not sales:
+                return {"ok": True, "exported": 0, "message": "No hay ventas para exportar"}
 
-        ok = bool(sync.export_sales(sales))
+            # Exportar DENTRO de la sesión para que los objetos estén vinculados
+            ok = bool(sync.export_sales(sales))
+
         if not ok:
             return {"ok": False, "error": "Error exportando ventas a Google Sheets"}
 

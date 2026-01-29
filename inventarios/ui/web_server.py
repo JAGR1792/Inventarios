@@ -36,26 +36,6 @@ def create_app(session_factory, settings: Settings) -> Flask:
     def health() -> Response:
         return jsonify({"ok": True, "app": settings.APP_NAME})
 
-    # --- Static UI files ---
-    @app.get("/<path:filename>")
-    def web_static(filename: str):
-        # Avoid shadowing API/files endpoints
-        if filename.startswith("api/") or filename.startswith("files/"):
-            return jsonify({"ok": False, "error": "Not found"}), 404
-
-        p = (web_dir / filename).resolve()
-        if not str(p).startswith(str(web_dir)):
-            return jsonify({"ok": False, "error": "Not found"}), 404
-        if not p.exists() or not p.is_file():
-            return jsonify({"ok": False, "error": "Not found"}), 404
-
-        # Ensure correct content types for .js/.css on some Windows setups
-        if p.suffix.lower() in (".js", ".css"):
-            mimetypes.add_type("application/javascript", ".js")
-            mimetypes.add_type("text/css", ".css")
-
-        return send_from_directory(web_dir, filename)
-
     # --- Files (images) ---
     @app.get("/files/images/<path:filename>")
     def files_images(filename: str):
@@ -288,5 +268,21 @@ def create_app(session_factory, settings: Settings) -> Flask:
             v = ""
 
         return _ok({"ok": True, "image_url": f"/files/images/{quote(dst.name)}{v}"})
+
+    # --- Static UI files (MUST be defined LAST to not shadow API routes) ---
+    @app.get("/<path:filename>")
+    def web_static(filename: str):
+        p = (web_dir / filename).resolve()
+        if not str(p).startswith(str(web_dir)):
+            return jsonify({"ok": False, "error": "Not found"}), 404
+        if not p.exists() or not p.is_file():
+            return jsonify({"ok": False, "error": "Not found"}), 404
+
+        # Ensure correct content types for .js/.css on some Windows setups
+        if p.suffix.lower() in (".js", ".css"):
+            mimetypes.add_type("application/javascript", ".js")
+            mimetypes.add_type("text/css", ".css")
+
+        return send_from_directory(web_dir, filename)
 
     return app
